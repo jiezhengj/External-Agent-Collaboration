@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+capability-lab/
+smoke-tests/
+history/
+
+# Runtime state can contain credentials, session IDs, handoffs, provider output,
+# local paths, or user/project context. Keep it local by default.
+.ai-collaboration/*
+!.ai-collaboration/providers.local.example.json

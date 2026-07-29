@@ -1,0 +1,22 @@
+{
+  "mimo": {
+    "config_dir": "/Users/your-name/.claude-mimo",
+    "launcher": "/Users/your-name/.local/bin/claude",
+    "model": "opus",
+    "auth_token_keychain_service": "codex-external-agent/mimo",
+    "environment": {
+      "ANTHROPIC_BASE_URL": "https://api.xiaomimimo.com/anthropic",
+      "ANTHROPIC_MODEL": "mimo-v2.5-pro[1M]"
+    }
+  },
+  "deepseek": {
+    "config_dir": "/Users/your-name/.claude-deepseek",
+    "launcher": "/Users/your-name/.local/bin/claude",
+    "model": "opus",
+    "auth_token_keychain_service": "codex-external-agent/deepseek",
+    "environment": {
+      "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+      "ANTHROPIC_MODEL": "deepseek-v4-pro[1M]"
+    }
+  }
+}

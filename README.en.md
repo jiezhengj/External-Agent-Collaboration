@@ -24,9 +24,9 @@ The workflow is designed to provide the following behavior.
 8. **One-pass independent review.** A high-risk execution may receive one read-only critique from the other provider. The reviewer does not automatically re-invoke the executor, so there is no debate loop.
 9. **Durable local state.** Project context, decisions, handoffs, outputs, session records, capability records, routing metrics, and archives live in a local collaboration directory rather than only in chat history.
 
-## Planned implementation
+## Implementation
 
-The project-local Skill is intended to include these parts:
+The project-local Skill includes these parts:
 
 | Part | Responsibility |
 | --- | --- |
@@ -73,4 +73,4 @@ When the workflow is implemented or changed, update the Skill instructions, test
 
 ## Status
 
-This repository currently contains the bilingual project description. The workflow above is the working design and acceptance target for the project-local implementation.
+The project-local implementation, its tests, design documents, and bilingual README are included in this repository. Provider credentials and runtime collaboration data deliberately remain local and Git-ignored.
