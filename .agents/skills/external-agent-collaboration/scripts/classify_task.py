@@ -29,7 +29,7 @@ def classify(text: str) -> dict[str, str | float | bool]:
         raise ValueError("Request text is empty.")
 
     sensitive = contains(normalized, ("api key", "token", "password", "密码", "密钥", ".env", "私钥", "客户数据", "生产数据"))
-    current = contains(normalized, ("今天", "最新", "实时", "新闻", "天气", "股价", "汇率", "current", "latest", "today", "weather", "price"))
+    current = contains(normalized, ("今天", "最新", "实时", "新闻", "天气", "股价", "汇率", "latest", "today", "weather", "price"))
     connector = contains(normalized, ("gmail", "邮箱", "日历", "calendar", "slack", "notion", "drive"))
     artifact = contains(normalized, ("图片", "image", "ppt", "pptx", "幻灯片", "slides", "xlsx", "excel", "word", ".docx", "pdf"))
     code = contains(normalized, ("代码", "code", "bug", "报错", "test", "测试", "函数", "api", "重构", "repo", "仓库", "脚本"))

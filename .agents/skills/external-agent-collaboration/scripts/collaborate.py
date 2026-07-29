@@ -527,8 +527,11 @@ def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | No
     raw = result.get("result")
     if not isinstance(raw, str):
         return None, ["result is not a JSON string"]
+    candidate = raw.strip()
+    if candidate.startswith("```json") and candidate.endswith("```"):
+        candidate = candidate[7:-3].strip()
     try:
-        value = json.loads(raw)
+        value = json.loads(candidate)
     except json.JSONDecodeError as exc:
         return None, [f"result is not valid JSON: {exc.msg}"]
     errors = schema_errors(value, RESPONSE_CONTRACT_SCHEMA)

@@ -24,6 +24,7 @@ def expect(text: str, **expected: str) -> None:
 def main() -> None:
     expect("帮我修改这个多文件 TypeScript bug，并运行测试", task_type="code", mode="execute", delegation="external_agent")
     expect("查询今天上海天气", task_type="current_information", delegation="native_codex")
+    expect("Analyze the current docs structure", delegation="direct")
     expect("生成一份带图片的 PPTX", delegation="native_codex")
     expect("这里有 API token，请分析它", risk="prohibited", delegation="direct")
     expect("把这句话改得更通顺", delegation="direct")

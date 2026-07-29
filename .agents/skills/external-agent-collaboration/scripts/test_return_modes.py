@@ -32,6 +32,8 @@ def main() -> None:
     full = record({"result": json.dumps(valid), "session_id": "session-1", "total_cost_usd": 0.01})
     response, errors = collaborate.parse_response_contract(full["result"])
     assert errors == [] and response == valid
+    fenced_response, fenced_errors = collaborate.parse_response_contract({"result": "```json\n" + json.dumps(valid) + "\n```"})
+    assert fenced_errors == [] and fenced_response == valid
 
     compact = collaborate.return_payload("compact", full, ".ai-collaboration/outputs/run-1.json", response, errors)
     assert "result" not in compact and compact["result_contract_failed"] is False

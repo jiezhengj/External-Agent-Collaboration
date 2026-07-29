@@ -27,7 +27,7 @@
 
 ## 调用与安全
 
-每个任务首次调用某 provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。`collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
+每个任务首次调用某 provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。`collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。最外层严格匹配的 ` ```json ` fence 会在合约校验前剥离；若结果仍不合约但内容可用，不自动重复同一 consult，而是消费受限结果或按明确路径检查本地 output。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
 
 不要切换 CC Switch 全局 provider。执行器使用 `.ai-collaboration/providers.local.json` 中该 provider 的隔离 `CLAUDE_CONFIG_DIR`。
 
