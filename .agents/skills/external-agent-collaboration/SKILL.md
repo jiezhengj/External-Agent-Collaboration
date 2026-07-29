@@ -1,6 +1,6 @@
 ---
 name: external-agent-collaboration
-description: Coordinate persistent collaborators from locally configured providers through the local Claude Code CLI, including automatic session recovery and bounded external file edits. Use when continuing a project/topic owned by an external collaborator, when large local context, an independent perspective, or scoped multi-file execution materially improves the work. Do not use for trivial chat, unverified current information, connector data, native image/document/spreadsheet production, secrets, deployments, or destructive operations.
+description: Proactively coordinate persistent external collaborators from locally configured providers through the local Claude Code CLI for non-trivial repository work. Use when resuming an external-collaborator topic, the user asks for an independent or second-model review, the request covers a whole repository, related modules, or multiple files, or a bounded independent implementation would materially improve the result. Prefer this skill over solo handling when one of those conditions clearly applies. Do not use for simple questions, routine reviews, small single-file changes, current information, connected-account data, native image/document/spreadsheet production, secrets, deployments, or destructive operations. Use only when the project has a usable local provider configuration.
 ---
 
 # External Agent Collaboration

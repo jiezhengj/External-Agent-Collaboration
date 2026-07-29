@@ -1,6 +1,6 @@
 # 项目协作规则
 
-本项目使用 `external-agent-collaboration` Skill，通过本地配置的 provider profile 协调持续的外部协作者会话。Skill 可以隐式触发，但每次外部调用必须对应用户请求或一次明确的 Codex 协作决策；禁止递归调用或自动辩论循环。
+本项目对非简单仓库任务使用 `external-agent-collaboration` Skill，通过本地配置的 provider profile 协调持续的外部协作者会话。其元数据匹配恢复协作主题、用户要求独立/第二模型评审、全仓/关联模块/多文件工作或边界明确的独立实施时，Skill 可以隐式触发；每次外部调用仍必须对应用户请求或一次明确的 Codex 协作决策。禁止递归调用或自动辩论循环。
 
 - 将每个 session 绑定到主题、provider、model profile 和工作目录；只用明确 session ID 恢复。
 - 不切换 CC Switch 的全局当前 provider。
