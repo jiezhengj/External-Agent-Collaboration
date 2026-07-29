@@ -5,5 +5,6 @@
 |专题|状态|讨论基线|入口|
 |---|---|---|---|
 |协作效能优化|已实现（P0/P1/P2/P3）|`14a8985` 的已实现协作 harness|[2026-07-29-协作效能优化](2026-07-29-协作效能优化/README.md)|
+|Provider 路由、故障切换与 Claude Code 模型职责|本地实现与 fake/local 回归完成；真实 provider 验证未新增|当前 provider profile、session/router 实现与 2026-07-29 讨论结论|[2026-07-29-provider-routing-failover](2026-07-29-provider-routing-failover/README.md)|
 
 目录命名：`YYYY-MM-DD-<slug>/`。目录内至少包含 `README.md`；较长的方案、调研或验收材料放在同一目录，避免与当前规范并列为孤立顶层文件。

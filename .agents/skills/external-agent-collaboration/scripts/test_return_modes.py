@@ -32,6 +32,8 @@ def main() -> None:
     full = record({"result": json.dumps(valid), "session_id": "session-1", "total_cost_usd": 0.01})
     response, errors = collaborate.parse_response_contract(full["result"])
     assert errors == [] and response == valid
+    assert collaborate.has_permission_denial({"permission_denials": ["Bash(unapproved)"]})
+    assert not collaborate.has_permission_denial({"permission_denials": []})
     fenced_response, fenced_errors = collaborate.parse_response_contract({"result": "```json\n" + json.dumps(valid) + "\n```"})
     assert fenced_errors == [] and fenced_response == valid
 

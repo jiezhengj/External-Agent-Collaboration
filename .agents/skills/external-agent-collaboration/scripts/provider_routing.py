@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Privacy-preserving provider routing based on locally observed outcomes."""
+"""Privacy-preserving fair provider routing for externally eligible work."""
 
 from __future__ import annotations
 
 from typing import Any
-
-
-MIN_QUALITY_SAMPLES = 3
 
 
 def metric_key(task_type: str, mode: str) -> str:
@@ -52,41 +49,26 @@ def average_duration(events: list[dict[str, Any]]) -> float | None:
     return sum(float(value) for value in values) / len(values) if values else None
 
 
+def rotation_basis(task_type: str, mode: str) -> str:
+    if task_type == "code" and mode == "execute":
+        return "starter_policy_coding_execute_rotation"
+    if task_type in {"code", "document", "research", "planning"}:
+        return "starter_policy_text_reasoning_rotation"
+    return "starter_policy_fair_rotation"
+
+
 def choose_provider(metrics: dict[str, Any], candidates: list[str], task_type: str, mode: str) -> tuple[str, dict[str, Any]]:
     if not candidates:
         raise ValueError("No provider candidates available.")
     key = metric_key(task_type, mode)
-    facts = {provider: matching_events(metrics, provider, task_type, mode) for provider in candidates}
-    qualified = [provider for provider in candidates if len(facts[provider]) >= MIN_QUALITY_SAMPLES]
-    if qualified:
-        # Quality is primary; verified completion and speed only break ties. Unknown quality
-        # is intentionally not treated as a positive score.
-        ranked = sorted(
-            qualified,
-            key=lambda provider: (
-                -(quality_score(facts[provider]) if quality_score(facts[provider]) is not None else -1.0),
-                -completed_rate(facts[provider]),
-                average_duration(facts[provider]) if average_duration(facts[provider]) is not None else float("inf"),
-                provider,
-            ),
-        )
-        selected = ranked[0]
-        return selected, {
-            "basis": "observed_metrics",
-            "task_key": key,
-            "sample_counts": {provider: len(facts[provider]) for provider in candidates},
-            "selected_quality_score": quality_score(facts[selected]),
-            "selected_completion_rate": completed_rate(facts[selected]),
-        }
-
     cursor = metrics.setdefault("round_robin_cursor", {}).get(key, 0)
     ordered = sorted(candidates)
     selected = ordered[int(cursor) % len(ordered)]
     metrics["round_robin_cursor"][key] = int(cursor) + 1
     return selected, {
-        "basis": "cold_start_round_robin",
+        "basis": rotation_basis(task_type, mode),
         "task_key": key,
-        "sample_counts": {provider: len(facts[provider]) for provider in candidates},
+        "candidate_count": len(ordered),
     }
 
 

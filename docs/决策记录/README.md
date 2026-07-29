@@ -7,3 +7,5 @@
 命名：`DEC-YYYYMMDD-<slug>.md`。
 
 每条记录至少包含：状态（proposed/accepted/superseded）、日期、上下文、决策、备选方案、后果、受影响主文档、实现/测试证据和后续替代记录（如有）。
+
+- [DEC-20260729-provider-routing-failover](DEC-20260729-provider-routing-failover.md)：公平 provider 轮换、可用性熔断，以及 CC Switch 内部模型职责。

@@ -41,7 +41,8 @@ def run(args: argparse.Namespace) -> int:
     batch.rel(chunk); batch.rel(output); batch.local_control_path(chunk); batch.local_control_path(output)
     records=batch.read_jsonl(chunk)
     if not records: raise batch.BatchError("Batch chunk is empty.")
-    available=collaborate.profiles()
+    configured=collaborate.profiles()
+    available=collaborate.trusted_profiles(configured,collaborate.trust_registry())
     if args.provider=="auto":
         ready=sorted(key for key,value in available.items() if collaborate.profile_problem(value) is None)
         provider,route=choose_provider(valid_metrics(collaborate.load_json(collaborate.METRICS_FILE,{"events":[]})),ready,"data","analyze")

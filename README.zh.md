@@ -8,14 +8,14 @@
 
 项目想解决的问题很具体：长期本地工作不能只靠一次性调用外部模型。需要把 provider 和会话分开、保留项目背景、限制文件修改范围，并验证实际发生了什么。
 
-这里不绑定某一家模型服务商。使用者自行在本地配置正在使用的 provider 和模型映射；MiMo 和 DeepSeek 只是最初本地环境中的示例，并不是本项目的固定依赖。provider 的选择应来自同类任务的本地证据。
+这里不绑定某一家模型服务商。使用者自行在本地配置正在使用的 provider 和模型映射；MiMo 和 DeepSeek 只是最初本地环境中的示例，并不是本项目的固定依赖。对同等健康且均适合外部协作的 provider，当前 starter policy 使用可持久化的公平轮换；运行指标仅用于审计和日后经明确决策启用的学习路由。
 
 ## 具体需求
 
 1. **统一入口与主动触发。** 用户只与 Codex 协作。全局可发现时，Skill 会主动匹配恢复协作主题、用户要求独立/第二模型评审、全仓/关联模块/多文件工作，以及边界明确的独立实施；仅在本地 provider 已配置且后续分类允许时引入外部协作者。简单问答、常规评审和小型单文件修改由 Codex 直接处理。
 2. **独立的持续会话。** 一个会话绑定主题、provider、模型 profile 和工作目录。恢复必须使用已保存的 session ID，不能使用含义不明确的“最近会话”。
 3. **按任务决定是否委派。** 调用前按任务类型、工作模式、风险、上下文规模和工具需求分类。小任务由 Codex 直接完成；当前信息、连接器、图片、表格、幻灯片、PDF 和最终格式化办公文件走 Codex 原生工具。
-4. **依据本地结果路由。** 新主题先平衡轮换；后续再基于同类任务的质量、完成情况、耗时、成本、工具拒绝、返工和采纳等元数据选择 provider。
+4. **公平路由与可用性兜底。** 新主题的非敏感文本与限定范围代码工作在健康 provider 间公平轮换；provider 的余额、认证、端点或暂时服务故障才会熔断并至多切换另一家一次。
 5. **受控的外部修改。** 实施交接必须写明允许路径、禁止路径、允许命令、验收检查和预期产物。
 6. **机器检查完成性。** 模型说“完成”不等于完成。预期结果可要求文件存在、包含或等于指定内容、满足受限 JSON Schema、变更数量在范围内，或通过显式批准的验证命令。
 7. **按能力处理新建文件。** 新会话实测到的 `Write` 能力，与旧会话创建时的工具集分开处理。旧会话缺工具时优先创建可追溯 fork；精确 Shell 兜底只在必要时使用。
@@ -29,7 +29,7 @@
 |部分|职责|
 | --- | --- |
 |任务分类器|决定直接处理、Codex 原生处理、外部协作或禁止交接。|
-|Provider 路由器|从持续会话或匿名本地结果中选择 provider。|
+|Provider 路由器|恢复持续会话，或在健康 provider 间公平轮换；维护本地可用性冷却。|
 |协作执行器|以隔离 provider 配置调用本地 CLI，并施加受限权限。|
 |结果验证器|检查真实文件和命令；对越界或不合格变更进行恢复。|
 |能力探测器|需要新建文件或能力记录过期时，实测新会话工具。|
@@ -53,6 +53,14 @@ python3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
 python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
 ```
 
+通过诊断不等于授权外发。确认该 provider 可接收本项目的最小非敏感 handoff 后，再在本机写入与当前非密钥 profile 指纹绑定的批准记录：
+
+```bash
+python3 .agents/skills/external-agent-collaboration/scripts/trust_provider.py --provider <provider-key> --approve
+```
+
+profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，批准自动失效，必须由用户重新执行该命令。该机制不读取或打印凭证，也不绕过 Codex 宿主的最终外发审批。
+
 使用 `bootstrap.py --check` 只检查文件和目录是否就绪；它刻意不验证凭证值。
 
 ## 建议使用流程
@@ -60,7 +68,7 @@ python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider
 1. 读取本地项目背景、当前状态和已确认决策。
 2. 编写一份简短且不含敏感内容的 handoff，不复制整段聊天记录。
 3. 分类任务；若内容敏感或禁止交接则停止。
-4. 恢复精确会话、使用用户指定 provider，或按本地指标选择 provider。
+4. 恢复精确会话、使用用户指定 provider，或在健康 provider 间按持久化 cursor 公平轮换。
 5. 涉及文件修改时，声明尽可能小的允许路径和至少一项机器可检查的预期结果。
 6. 使用隔离的本地 profile 运行外部协作者。
 7. 在 Codex 中检查结果、变更路径、outcomes 和规定验证的实际输出。
@@ -75,13 +83,13 @@ python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider
 - 不从聊天文本推断成功；必须独立验证文件和命令。
 - 不能把新会话能力探测的结果套用给旧会话。
 - 日志和指标应保持最小化：记录运行元数据，不保存提示词、密钥或业务内容。
-- provider 失败应是有边界的失败。必要时可有一次明确的备用调用，但不能自动反复重试。
+- provider 失败应是有边界的失败。仅识别为余额、认证、端点或暂时服务可用性故障时，才会对另一健康 provider 自动调用一次；实现失败、outcome 失败和越界修改不会触发切换。
 
 ## 配置原则
 
 provider 凭证仅保存在 Git 忽略的本地配置中，具体格式不写入公开 README。仓库中不得出现 token、endpoint 凭证、会话 transcript、能力实验产物或含私人信息的运行日志。
 
-每份 profile 只提供本地 CLI 所需内容：隔离配置目录、launcher、模型映射、非密钥环境配置和本地认证。运行器只能将凭证注入子进程环境，不能写入 handoff 或输出记录。
+每份 profile 只提供本地 CLI 所需内容：隔离配置目录、launcher、CC Switch/Claude Code 的环境模型映射、非密钥环境配置和本地认证。运行器不传 `--model`，因此不会覆盖 provider 内部的 FABLE/OPUS/SONNET/HAIKU/SUBAGENT 映射；它也不把 Flash/Base/Pro 当作跨 provider 路由对象。运行器只能将凭证注入子进程环境，不能写入 handoff 或输出记录。
 
 ## 维护方式
 

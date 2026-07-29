@@ -4,10 +4,12 @@
 
 1. 用户指定 provider 时使用指定 provider。
 2. 存在完全匹配的 active session 时恢复它。
-3. 新主题优先使用本地 `provider_metrics.json` 的同类任务记录；无足够样本时在已配置 provider 间轮换。
-4. 仅当自动选择的 provider 出现认证、端点或协议错误时，可故障转移一次；用户明确指定 provider 时不自动替换。
+3. 新主题在健康且合格的 provider 间使用 `task_type:mode` 的持久化 cursor 公平轮换；`provider_metrics.json` 只记录审计元数据，不在当前 starter policy 中打破平局。
+4. 仅当自动选择的 provider 出现已归类的 billing、authentication、endpoint、rate-limit、transport 或 server 可用性故障时，可故障转移一次；用户明确指定 provider 时不自动替换。任务、契约、outcome、超范围或实现失败不允许切换。
 
-Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务分类只在选中后决定是否允许实际委派。可委派的新主题按 `task_type:mode` 查 `provider-metrics.json`：少于三条同类样本时轮换；样本足够后质量优先、完成率和耗时为次级条件。记录只含匿名运行元数据，不能保存提示词或文件正文。
+Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务分类只在选中后决定是否允许实际委派。`.ai-collaboration/provider-health.json` 只保存 failure kind、次数和 retry time，不保存 prompt、文件正文、token、URL query 或原始 stderr。billing/authentication/endpoint/configuration 冷却 24 小时；暂时故障按 5 分钟、15 分钟、1 小时、6 小时递增。无后台探测；到期后由下一次原本允许的调用恢复尝试。
+
+在首次真实外发前，用户必须运行 `trust_provider.py --provider <key> --approve`。该命令在 ignored 的 `trusted-providers.local.json` 写入 provider key 与当前 profile 的非密钥 fingerprint；runner 只接受仍匹配的记录。profile 的 endpoint、模型映射、配置目录或非密钥环境变化时，记录自动失效。它用于区分“本机 Claude Code harness”与“已获用户批准的 provider egress”，但不能绕过 Codex 宿主平台的最终审批。
 
 ## 能力探测
 
@@ -36,6 +38,7 @@ bootstrap 创建但不覆盖 `project-context.md`、`decisions.md` 与 `topics/`
 - `completed`：机器 expected outcomes、范围检查和规定校验均通过。
 - `needs_review`：越界变更已恢复、校验失败或关键结论尚未核验。
 - `failed`：CLI、profile、超时、协议或 expected outcome 错误；执行器恢复该次任务改动。
+- `blocked_by_permission`：`dontAsk` 拒绝了一项未预批准操作；不会在非交互 runner 中等待人工终端审批。
 
 ## 一次性独立审查
 

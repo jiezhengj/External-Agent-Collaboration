@@ -8,3 +8,4 @@ history/
 # local paths, or user/project context. Keep it local by default.
 .ai-collaboration/*
 !.ai-collaboration/providers.local.example.json
+!.ai-collaboration/trusted-providers.local.example.json

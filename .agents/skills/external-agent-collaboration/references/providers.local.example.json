@@ -2,7 +2,6 @@
   "provider_a": {
     "config_dir": "/Users/your-name/.claude-provider-a",
     "launcher": "claude",
-    "model": "opus",
     "auth_token_keychain_service": "external-agent-collaboration/provider_a",
     "environment": {
       "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
@@ -12,7 +11,6 @@
   "provider_b": {
     "config_dir": "/Users/your-name/.claude-provider-b",
     "launcher": "claude",
-    "model": "opus",
     "auth_token_keychain_service": "external-agent-collaboration/provider_b",
     "environment": {
       "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",

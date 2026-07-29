@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for cold-start and metric-based provider routing."""
+"""Regression tests for persistent fair provider routing."""
 
 from __future__ import annotations
 
@@ -19,12 +19,14 @@ def main() -> None:
     first, first_info = routing.choose_provider(metrics, ["mimo", "deepseek"], "code", "execute")
     second, second_info = routing.choose_provider(metrics, ["mimo", "deepseek"], "code", "execute")
     assert first == "deepseek" and second == "mimo"
-    assert first_info["basis"] == second_info["basis"] == "cold_start_round_robin"
+    assert first_info["basis"] == second_info["basis"] == "starter_policy_coding_execute_rotation"
     for _ in range(3):
         routing.append_event(metrics, {"provider": "mimo", "task_type": "code", "mode": "execute", "status": "completed", "quality_score": 4.7, "duration_seconds": 30})
         routing.append_event(metrics, {"provider": "deepseek", "task_type": "code", "mode": "execute", "status": "completed", "quality_score": 3.8, "duration_seconds": 10})
     selected, info = routing.choose_provider(metrics, ["mimo", "deepseek"], "code", "execute")
-    assert selected == "mimo" and info["basis"] == "observed_metrics"
+    assert selected == "deepseek" and info["basis"] == "starter_policy_coding_execute_rotation"
+    text, text_info = routing.choose_provider(metrics, ["mimo", "deepseek"], "research", "analyze")
+    assert text == "deepseek" and text_info["basis"] == "starter_policy_text_reasoning_rotation"
     cleaned = routing.default_metrics()
     routing.append_event(cleaned, {"provider": "mimo", "task_type": "code", "mode": "execute", "status": "completed", "prompt": "must not persist"})
     assert "prompt" not in cleaned["events"][0]

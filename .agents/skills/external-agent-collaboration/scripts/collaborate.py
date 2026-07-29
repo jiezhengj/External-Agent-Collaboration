@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import hashlib
 import json
 import os
@@ -18,14 +19,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from provider_health import classify_failure, default_health, is_available, record_failure, record_success, status as provider_health_status, valid_health
 from provider_routing import append_event, choose_provider, valid_metrics
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
 PROFILE_FILE = CONTROL_ROOT / "providers.local.json"
+TRUST_FILE = CONTROL_ROOT / "trusted-providers.local.json"
 SESSIONS_FILE = CONTROL_ROOT / "sessions.json"
 METRICS_FILE = CONTROL_ROOT / "provider-metrics.json"
+HEALTH_FILE = CONTROL_ROOT / "provider-health.json"
 TOPICS_FILE = CONTROL_ROOT / "topics.json"
 SENSITIVE_PARTS = {".git", "secrets", "credentials", "private"}
 SENSITIVE_NAMES = {".env", "id_rsa", "id_ed25519"}
@@ -105,6 +109,41 @@ def profiles() -> dict[str, dict[str, Any]]:
     return {key: value for key, value in data.items() if isinstance(value, dict)}
 
 
+def profile_fingerprint(profile: dict[str, Any]) -> str:
+    """Fingerprint non-secret profile configuration without persisting its values."""
+    safe = {key: value for key, value in profile.items() if key not in {"auth_token", "auth_token_keychain_service"}}
+    environment = safe.get("environment")
+    if isinstance(environment, dict):
+        safe["environment"] = {
+            key: "[REDACTED]" if any(marker in key.upper() for marker in ("TOKEN", "KEY", "SECRET", "PASSWORD")) else value
+            for key, value in environment.items()
+        }
+    encoded = json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def trust_registry() -> dict[str, Any]:
+    data = load_json(TRUST_FILE, {"schema_version": 1, "providers": {}})
+    if not isinstance(data, dict) or not isinstance(data.get("providers"), dict):
+        raise CollaborationError("trusted-providers.local.json must contain a providers object.")
+    data.setdefault("schema_version", 1)
+    return data
+
+
+def provider_is_trusted(provider: str, profile: dict[str, Any], trust: dict[str, Any]) -> bool:
+    record = trust.get("providers", {}).get(provider)
+    return (
+        isinstance(record, dict)
+        and record.get("approved") is True
+        and isinstance(record.get("profile_fingerprint"), str)
+        and hmac.compare_digest(record["profile_fingerprint"], profile_fingerprint(profile))
+    )
+
+
+def trusted_profiles(configured: dict[str, dict[str, Any]], trust: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {provider: profile for provider, profile in configured.items() if provider_is_trusted(provider, profile, trust)}
+
+
 def profile_problem(profile: dict[str, Any]) -> str | None:
     direct_token = profile.get("auth_token")
     service = profile.get("auth_token_keychain_service")
@@ -123,12 +162,26 @@ def profile_problem(profile: dict[str, Any]) -> str | None:
     return None
 
 
-def alternate_provider(current: str, available: dict[str, dict[str, Any]]) -> tuple[str, dict[str, Any]] | None:
-    for candidate in sorted(available):
-        profile = available.get(candidate)
-        if candidate != current and profile and profile_problem(profile) is None:
-            return candidate, profile
-    return None
+def health_registry() -> dict[str, Any]:
+    return valid_health(load_json(HEALTH_FILE, default_health()))
+
+
+def save_health(data: dict[str, Any]) -> None:
+    write_json(HEALTH_FILE, data)
+
+
+def healthy_providers(available: dict[str, dict[str, Any]], health: dict[str, Any], excluded: set[str] | None = None) -> list[str]:
+    excluded = excluded or set()
+    return [provider for provider in sorted(available) if provider not in excluded and is_available(health, provider)]
+
+
+def alternate_provider(current: str, available: dict[str, dict[str, Any]], metrics: dict[str, Any], health: dict[str, Any], task_type: str, mode: str) -> tuple[str, dict[str, Any], dict[str, Any]] | None:
+    candidates = [provider for provider in healthy_providers(available, health, {current}) if profile_problem(available[provider]) is None]
+    if not candidates:
+        return None
+    provider, route = choose_provider(metrics, candidates, task_type, mode)
+    route = {**route, "basis": "availability_failover", "failed_provider": current}
+    return provider, available[provider], route
 
 
 def registry() -> dict[str, Any]:
@@ -183,7 +236,7 @@ def allowed(rel: Path, paths: list[Path]) -> bool:
     return any(rel == candidate or candidate in rel.parents for candidate in paths)
 
 
-def select_provider(requested: str, topic: str, workdir: Path, sessions: list[dict[str, Any]], available: dict[str, dict[str, Any]], metrics: dict[str, Any], task_type: str, mode: str) -> tuple[str, dict[str, Any] | None, bool, dict[str, Any]]:
+def select_provider(requested: str, topic: str, workdir: Path, sessions: list[dict[str, Any]], available: dict[str, dict[str, Any]], metrics: dict[str, Any], health: dict[str, Any], task_type: str, mode: str) -> tuple[str, dict[str, Any] | None, bool, dict[str, Any]]:
     matches = [
         item for item in sessions
         if item.get("status") == "active" and item.get("topic") == topic
@@ -195,12 +248,19 @@ def select_provider(requested: str, topic: str, workdir: Path, sessions: list[di
             raise CollaborationError("Multiple active sessions match topic/provider/workdir; pass --session-key.")
         return requested, matches[0] if matches else None, False, {"basis": "user_specified"}
     if len(matches) == 1:
-        return str(matches[0]["provider"]), matches[0], False, {"basis": "exact_active_session"}
+        provider = str(matches[0]["provider"])
+        if is_available(health, provider):
+            return provider, matches[0], False, {"basis": "exact_active_session"}
+        fallback = alternate_provider(provider, available, metrics, health, task_type, mode)
+        if fallback is None:
+            raise CollaborationError(f"Active session provider '{provider}' is in availability cooldown and no healthy alternate provider is configured.")
+        alternate, _profile, route = fallback
+        return alternate, None, True, {**route, "basis": "active_session_availability_failover", "source_session_key": matches[0].get("key")}
     if len(matches) > 1:
         raise CollaborationError("Multiple active sessions match topic/workdir; select a provider or --session-key.")
-    candidates = sorted(available)
+    candidates = healthy_providers(available, health)
     if not candidates:
-        raise CollaborationError("No configured provider profiles are available.")
+        raise CollaborationError("No configured provider is currently outside availability cooldown.")
     chosen, route = choose_provider(metrics, candidates, task_type, mode)
     return chosen, None, True, route
 
@@ -319,9 +379,6 @@ def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, ses
             command.append("--fork-session")
     if ephemeral:
         command.append("--no-session-persistence")
-    model = profile.get("model")
-    if isinstance(model, str) and model and model != "user-configured":
-        command.extend(["--model", model])
     environment = provider_environment(profile)
     environment["CLAUDE_CONFIG_DIR"] = str(profile["config_dir"])
     try:
@@ -523,6 +580,11 @@ def result_text(result: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def has_permission_denial(result: dict[str, Any]) -> bool:
+    """`dontAsk` must surface a denied action as a blocked run, never silent success."""
+    return bool(result.get("permission_denials"))
+
+
 def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
     raw = result.get("result")
     if not isinstance(raw, str):
@@ -566,7 +628,7 @@ def return_payload(return_mode: str, record: dict[str, Any], output_rel: str, re
     common = {
         "run_id": record["run_id"], "status": record["status"], "provider": record["provider"],
         "action": record["action"], "task_type": record["task_type"], "mode": record["mode"],
-        "topic": record["topic"], "routing": record["routing"], "output_path": output_rel,
+        "topic": record["topic"], "routing": record["routing"], "provider_health": record.get("provider_health"), "output_path": output_rel,
         "result_contract_failed": bool(contract_errors),
     }
     if return_mode == "debug":
@@ -719,9 +781,16 @@ def main() -> int:
             raise CollaborationError("Each validation command must be a non-empty single line.")
         outcomes = load_outcomes(Path(args.expected_outcomes).resolve()) if args.action == "execute" else []
         new_files = required_new_files(outcomes) if args.action == "execute" else []
-        available = profiles()
+        configured = profiles()
+        trust = trust_registry()
+        available = trusted_profiles(configured, trust)
+        if args.provider != "auto" and args.provider not in available:
+            raise CollaborationError(f"Provider '{args.provider}' is not approved for external collaboration, or its non-secret profile configuration changed. Run trust_provider.py --provider {args.provider} --approve after user approval.")
+        if args.provider == "auto" and not available:
+            raise CollaborationError("No configured provider has a current user-approved trust record. Run trust_provider.py --provider <key> --approve after user approval.")
         data = registry()
         metrics = valid_metrics(load_json(METRICS_FILE, {"schema_version": 1, "round_robin_cursor": {}, "events": []}))
+        health = health_registry()
         sessions = [item for item in data["sessions"] if isinstance(item, dict)]
         if args.session_key:
             session = find_session(args.session_key, sessions)
@@ -733,7 +802,7 @@ def main() -> int:
             auto_selected = False
             route = {"basis": "explicit_session_key"}
         else:
-            provider, session, auto_selected, route = select_provider(args.provider, args.topic, workdir, sessions, available, metrics, task_type, mode)
+            provider, session, auto_selected, route = select_provider(args.provider, args.topic, workdir, sessions, available, metrics, health, task_type, mode)
         if args.fork_session and (session is None or args.ephemeral):
             raise CollaborationError("--fork-session requires a resolved persistent active session and cannot be ephemeral.")
         profile = available.get(provider)
@@ -741,13 +810,17 @@ def main() -> int:
             raise CollaborationError(f"Provider '{provider}' has no configured profile.")
         problem = profile_problem(profile)
         if problem:
-            fallback = alternate_provider(provider, available) if args.provider == "auto" else None
+            if args.provider == "auto":
+                record_failure(health, provider, "configuration")
+                save_health(health)
+            fallback = alternate_provider(provider, available, metrics, health, task_type, mode) if args.provider == "auto" else None
             if fallback is None:
                 raise CollaborationError(f"Provider profile is not ready: {problem}")
-            provider, profile = fallback
+            failed_provider = provider
+            provider, profile, route = fallback
             session = None
-            log["profile_failover"] = provider
-        log.update({"provider": provider, "auto_selected": auto_selected, "session_key": session.get("key") if session else None, "routing": route})
+            log["profile_failover"] = {"from": failed_provider, "to": provider, "failure_kind": "configuration"}
+        log.update({"provider": provider, "auto_selected": auto_selected, "session_key": session.get("key") if session else None, "routing": route, "provider_health_before": provider_health_status(health, provider)})
 
         effective_fork = args.fork_session
         commands = list(args.allow_command)
@@ -772,26 +845,38 @@ def main() -> int:
             before = manifest(PROJECT_ROOT)
         prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode)
         exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout)
-        log.update({"exit_code": exit_code, "stderr": stderr[-4000:]})
+        log.update({"exit_code": exit_code, "stderr": one_line(stderr, 1200)})
 
         if exit_code != 0:
-            fallback = alternate_provider(provider, available) if args.provider == "auto" else None
+            failure_kind = classify_failure(exit_code, stderr)
+            if failure_kind:
+                record_failure(health, provider, failure_kind)
+                save_health(health)
+            fallback = alternate_provider(provider, available, metrics, health, task_type, mode) if args.provider == "auto" and failure_kind else None
             if fallback is None:
                 if checkpoint:
                     restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
-                raise CollaborationError(f"Claude CLI failed with exit code {exit_code}: {stderr[-800:]}")
+                reason = f"availability failure ({failure_kind})" if failure_kind else "non-availability failure; no provider failover"
+                raise CollaborationError(f"Claude CLI failed with exit code {exit_code}: {reason}: {one_line(stderr, 800)}")
             if checkpoint:
                 restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
             failed_provider = provider
-            provider, profile = fallback
+            provider, profile, route = fallback
             session = None
             exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, args.timeout)
-            log.update({"provider_failover": {"from": failed_provider, "to": provider}, "exit_code": exit_code, "stderr": stderr[-4000:]})
+            log.update({"provider_failover": {"from": failed_provider, "to": provider, "failure_kind": failure_kind}, "exit_code": exit_code, "stderr": one_line(stderr, 1200)})
             if exit_code != 0:
+                fallback_kind = classify_failure(exit_code, stderr)
+                if fallback_kind:
+                    record_failure(health, provider, fallback_kind)
+                    save_health(health)
                 if checkpoint:
                     restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
-                raise CollaborationError(f"Fallback Claude CLI failed with exit code {exit_code}: {stderr[-800:]}")
+                raise CollaborationError(f"Fallback Claude CLI failed with exit code {exit_code}: {one_line(stderr, 800)}")
+        record_success(health, provider)
+        save_health(health)
         result = parse_result(stdout)
+        permission_denied = has_permission_denial(result)
         changed: list[str] = []
         violations: list[str] = []
         outcome_results: list[dict[str, Any]] = []
@@ -813,7 +898,11 @@ def main() -> int:
             violations.extend(path for path in binary if not allowed(Path(path), binary_paths))
             violations = sorted(set(violations))
         outcome_failures = [item for item in outcome_results if not item.get("passed")]
-        if outcome_failures:
+        if permission_denied:
+            if checkpoint:
+                restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
+            status = "blocked_by_permission"
+        elif outcome_failures:
             if checkpoint:
                 restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
             status = "failed"
@@ -823,7 +912,7 @@ def main() -> int:
             status = "needs_review"
         else:
             status = "completed"
-        log.update({"status": status, "changed_files": changed, "deleted_files": deleted if checkpoint else [], "binary_files": binary if checkpoint else [], "restored_violations": violations, "outcome_results": outcome_results})
+        log.update({"status": status, "permission_denied": permission_denied, "changed_files": changed, "deleted_files": deleted if checkpoint else [], "binary_files": binary if checkpoint else [], "restored_violations": violations, "outcome_results": outcome_results, "provider_health_after": provider_health_status(health, provider)})
         duration_seconds = round(time.monotonic() - started_monotonic, 3)
         append_event(metrics, {
             "run_id": run_id, "timestamp": now(), "provider": provider, "model_profile": provider,
@@ -836,7 +925,7 @@ def main() -> int:
         response, contract_errors = parse_response_contract(result)
         output_file = output_path(run_id, "outputs")
         output_rel = str(output_file.relative_to(PROJECT_ROOT))
-        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "result_contract": {"valid": response is not None, "errors": contract_errors}}
+        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"valid": response is not None, "errors": contract_errors}}
         write_json(output_file, result_record)
         if not args.ephemeral and isinstance(result.get("session_id"), str):
             parent_key = session.get("key") if effective_fork and session else None

@@ -8,7 +8,7 @@ This repository documents and hosts a project-local workflow for coordinating pe
 
 The project exists because a simple one-off model call is not enough for longer local work. A useful collaboration setup needs to keep providers and sessions separate, retain project context, constrain file edits, and verify what actually changed.
 
-This is not tied to a particular model vendor. The operator supplies local provider profiles and model mappings for the services they use. MiMo and DeepSeek are examples from the original local setup, not requirements of this project. Provider choice should follow local evidence from comparable tasks.
+This is not tied to a particular model vendor. The operator supplies local provider profiles and model mappings for the services they use. MiMo and DeepSeek are examples from the original local setup, not requirements of this project. The current starter policy fairly rotates equally healthy, eligible providers; metrics are retained for audit and a future explicitly enabled learning policy.
 
 ## Functional requirements
 
@@ -17,7 +17,7 @@ The workflow is designed to provide the following behavior.
 1. **One entry point and proactive selection.** Users work with Codex. When globally discoverable, the Skill proactively matches a resumed collaborator topic, a requested independent or second-model review, whole-repository/related-module/multi-file work, or a clearly bounded independent implementation. An external collaborator is used only after local provider configuration and post-selection classification permit it; simple questions, routine reviews, and small single-file changes stay with Codex.
 2. **Separate persistent sessions.** A session is bound to a topic, provider, model profile, and working directory. Recovery uses a saved session ID, never an ambiguous “latest session” option.
 3. **Task-aware delegation.** Before a call, classify the request by task type, work mode, risk, context size, and required tools. Small requests stay with Codex; current information, connected services, images, spreadsheets, presentations, PDFs, and final formatted office files use native Codex tools.
-4. **Evidence-based routing.** New topics start with balanced provider rotation. Later, local results for the same task type and mode can inform routing using quality, completion, duration, cost, tool refusal, rework, and adoption metadata.
+4. **Fair routing and bounded availability fallback.** Non-sensitive text and scoped code work on new topics fairly rotate among healthy providers. Only billing, authentication, endpoint, or transient service failures open a cooldown and may trigger one alternate-provider call.
 5. **Bounded external edits.** An implementation handoff must state the allowed paths, forbidden paths, allowed commands, acceptance checks, and expected output.
 6. **Machine-checked completion.** A model saying “done” is not success. Expected outcomes may require a file to exist, contain exact text, satisfy a limited JSON Schema, change a bounded number of paths, or pass an explicitly approved validation command.
 7. **Capability-aware file creation.** A fresh session's ability to use `Write` is measured separately from an older resumed session's initial tool set. When a resumed session lacks a needed tool, the preferred resolution is a tracked fork; an exact shell fallback is a last resort.
@@ -31,7 +31,7 @@ The project-local Skill includes these parts:
 | Part | Responsibility |
 | --- | --- |
 | Task classifier | Decide direct, native-Codex, external, or prohibited handling. |
-| Provider router | Select a provider from saved session continuity or anonymized local results. |
+| Provider router | Resume a saved session or fairly rotate healthy providers, with local availability cooldowns. |
 | Collaboration executor | Invoke the local CLI with isolated provider configuration and constrained permissions. |
 | Outcome evaluator | Validate real files and commands; restore invalid or out-of-scope changes. |
 | Capability probe | Test fresh-session tools when file creation is required or capability data is stale. |
@@ -55,6 +55,14 @@ Edit the copied profile: replace placeholder endpoint/model values, choose your 
 python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
 ```
 
+Passing the diagnostic is not egress approval. After deciding that a provider may receive this project's minimal non-sensitive handoffs, record a local approval bound to its current non-secret profile fingerprint:
+
+```bash
+python3 .agents/skills/external-agent-collaboration/scripts/trust_provider.py --provider <provider-key> --approve
+```
+
+Changing endpoint, model mappings, configuration directory, or non-secret environment invalidates the approval and requires the user to run the command again. It neither reads nor prints credentials, and cannot bypass the host platform's final egress approval.
+
 Use `bootstrap.py --check` to verify only file and directory setup. It deliberately does not validate credential values.
 
 ## Suggested workflow
@@ -62,7 +70,7 @@ Use `bootstrap.py --check` to verify only file and directory setup. It deliberat
 1. Read the local project context, current state, and recorded decisions.
 2. Write a small, non-sensitive handoff instead of copying an entire chat transcript.
 3. Classify the task and stop if its content is sensitive or prohibited for delegation.
-4. Select an existing exact session, a user-named provider, or a provider selected by local routing data.
+4. Select an existing exact session, a user-named provider, or fairly rotate among healthy providers with the persistent local cursor.
 5. For file edits, declare the smallest allowed paths and one or more machine-checkable expected outcomes.
 6. Run the external collaborator through an isolated local profile.
 7. Inspect the generated result, changed paths, outcomes, and required validation results in Codex.
@@ -77,13 +85,13 @@ Use `bootstrap.py --check` to verify only file and directory setup. It deliberat
 - Do not infer success from a transcript. Verify files and commands independently.
 - Do not assume that a successful fresh-session capability probe changes an old session's tool availability.
 - Keep logs and metrics minimal: store operational metadata, not prompts, secrets, or business content.
-- Treat a provider failure as a bounded failure. A single deliberate fallback may be appropriate; repeated automatic retries are not.
+- Treat a provider failure as bounded. Only classified availability failures may make one automatic call to another healthy provider; outcome failures, bad implementations, and scope violations never trigger a provider switch.
 
 ## Configuration model
 
 Provider credentials belong in a local, Git-ignored configuration file. The exact format is intentionally kept outside this public README. The repository must not contain tokens, endpoint credentials, session transcripts, capability-lab artifacts, or generated private logs.
 
-Each profile should supply only what the local CLI needs: an isolated configuration directory, launcher, model mapping, non-secret environment settings, and local-only authentication. The runner should inject credentials only into the child process environment, never into the handoff or output record.
+Each profile should supply only what the local CLI needs: an isolated configuration directory, launcher, CC Switch/Claude Code environment model mappings, non-secret environment settings, and local-only authentication. The runner deliberately does not pass `--model`, so it does not override provider-internal FABLE/OPUS/SONNET/HAIKU/SUBAGENT mappings or route Flash/Base/Pro across providers. Credentials are injected only into the child-process environment, never into a handoff or output record.
 
 ## How to contribute
 
