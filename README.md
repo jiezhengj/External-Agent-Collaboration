@@ -11,3 +11,4 @@ English: A project-local Codex Skill for coordinating persistent external collab
 - [README.en.md](README.en.md) — purpose, requirements, implementation, workflows, safety boundaries, and maintenance.
 - [README.zh.md](README.zh.md) — 项目初衷、具体需求、实现方式、使用流程、注意事项与维护方式。
 - [Design documents](docs/) · [Skill](.agents/skills/external-agent-collaboration/SKILL.md)
+- [Agent rules (English)](AGENTS.md) · [项目协作规则（中文）](AGENTS.zh.md) · [Skill 中文镜像](.agents/skills/external-agent-collaboration/SKILL.zh.md)

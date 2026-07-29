@@ -1,11 +1,11 @@
 ---
 name: external-agent-collaboration
-description: Coordinate persistent MiMo Pro or DeepSeek Pro collaborators through the local Claude Code CLI, including automatic session recovery and bounded external file edits. Use when continuing a project/topic owned by an external collaborator, when large local context, an independent perspective, or scoped multi-file execution materially improves the work. Do not use for trivial chat, unverified current information, connector data, native image/document/spreadsheet production, secrets, deployments, or destructive operations.
+description: Coordinate persistent collaborators from locally configured providers through the local Claude Code CLI, including automatic session recovery and bounded external file edits. Use when continuing a project/topic owned by an external collaborator, when large local context, an independent perspective, or scoped multi-file execution materially improves the work. Do not use for trivial chat, unverified current information, connector data, native image/document/spreadsheet production, secrets, deployments, or destructive operations.
 ---
 
 # External Agent Collaboration
 
-Coordinate one clear handoff and return per user request. Codex remains the user-facing coordinator; MiMo and DeepSeek are persistent collaborators, not disposable subprocesses.
+Coordinate one clear handoff and return per user request. Codex remains the user-facing coordinator; Configured providers are persistent collaborators, not disposable subprocesses.
 
 ## Choose the collaboration action
 
@@ -41,7 +41,7 @@ Never change the CC Switch global active provider. The script uses the selected 
 - Bind every session to one topic, provider, model profile, and working directory.
 - Resume only with a saved `session_id`; never use Claude CLI `--continue`.
 - Create a new session when provider, model profile, working directory, or sustained topic changes.
-- Create a separate session for a forked approach. Do not migrate a MiMo session to DeepSeek or the reverse.
+- Create a separate session for a forked approach. Do not migrate a session from one provider profile to another.
 
 ## Execute-mode safety
 
@@ -49,7 +49,7 @@ The external collaborator may edit only the passed allowed paths. It may not com
 
 After every call, read the generated result and log. For code, shell, security, architecture, or factual claims, inspect the change summary and independently run the required validation before reporting completion. For low-risk drafts or brainstorming, preserve the collaborator's distinct contribution when useful.
 
-For a high-risk completed `execute`, run `scripts/review_execution.py --run-id <run_id> --provider <different-provider-key>` once after Codex has inspected the required validation. It creates a read-only critique with the other provider and never calls the executor again automatically. For creative or planning work, use one explicit provider per candidate; compare candidates in Codex instead of asking providers to debate each other.
+For a high-risk completed `execute`, run `scripts/review_execution.py --run-id <run_id> --provider <different-provider-key>` once after Codex has inspected the required validation. It creates a read-only critique with an explicitly selected different provider and never calls the executor again automatically. For creative or planning work, use one explicit provider per candidate; compare candidates in Codex instead of asking providers to debate each other.
 
 After Codex judges a completed external run or observes user adoption, call `scripts/assess_run.py --run-id <id> --quality-score 0..5 --user-adopted true|false --rework-count <n>`. It updates only the anonymous metric event; never put the assessment rationale or user content in the metrics file.
 

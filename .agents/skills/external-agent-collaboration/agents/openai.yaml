@@ -1,6 +1,6 @@
 interface:
   display_name: "外部代理协作"
-  short_description: "自动协作 MiMo 与 DeepSeek 长会话并受控改文件"
+  short_description: "协调可配置 provider 的持续会话并受控改文件"
   default_prompt: "使用 $external-agent-collaboration 自动协作处理本项目任务。"
 
 policy:

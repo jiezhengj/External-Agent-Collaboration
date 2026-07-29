@@ -1,0 +1,42 @@
+# 外部代理持续协作（中文镜像）
+
+英文主入口为 [SKILL.md](SKILL.md)，其中的 YAML frontmatter 用于 Codex 发现该 Skill。本文件是相同工作流的中文说明；修改主入口时请同步更新本文件。
+
+## 协作动作
+
+每个用户请求只进行一次清晰的交接与返回。Codex 始终面向用户；本地配置的外部 provider 是持续协作者，而不是一次性子进程。
+
+- `consult`：获取独立的只读分析。
+- `continue`：恢复匹配的持续主题会话。
+- `draft`：在共享工作区产出文本或规划草稿。
+- `critique`：不改文件地评估现有方案或产物。
+- `execute`：修改文件，并且只运行明确允许的验证命令。
+
+当前网页事实、已连接账户数据、图片、幻灯片、表格、PDF 或最终格式化办公产物应使用 Codex 原生工具。不要为了获得一致意见而外包简单任务。
+
+## 准备交接
+
+1. 存在时读取 `.ai-collaboration/project-context.md`、`current-state.md` 和 `decisions.md`。
+2. 写入不含敏感内容的请求文件，运行 `scripts/classify_task.py`，并阅读 [任务分类说明](references/task-classification.md)。结果为 `prohibited` 时停止；结果为 `native_codex` 时使用原生工具；只有 `external_agent` 或已记录的合理覆盖才继续。
+3. 明确 action、主题、工作目录、允许路径、必要检查和 provider。
+4. 尊重用户指定的 provider；否则恢复精确匹配的活动会话；新主题使用 [协作协议](references/collaboration-protocol.md) 中的路由规则。
+5. execute 需要新建文件/目录且能力记录缺失、超过七天、CLI/profile 变化或发生工具失败时，运行 `scripts/probe_capabilities.py --provider <provider>`。
+6. 同时检查 provider 能力记录和 session 的 `initial_toolset`。新 session 的能力不能直接套用给旧 session。需要时 fork/new session；只有实测原生创建不可用时，才使用最小精确 Bash 创建白名单。
+7. 将简洁 handoff 写入 `.ai-collaboration/handoffs/`。每个 execute 都必须按 [expected outcomes](references/expected-outcomes.md) 写 outcomes JSON。
+8. 不得加入 `.env` 内容、token、凭证、私钥、客户导出或无关私人文件。
+
+## 调用与安全
+
+每个任务首次调用某 provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
+
+不要切换 CC Switch 全局 provider。执行器使用 `.ai-collaboration/providers.local.json` 中该 provider 的隔离 `CLAUDE_CONFIG_DIR`。
+
+会话绑定主题、provider、model profile 和工作目录；仅用保存的 `session_id` 恢复，绝不使用 CLI `--continue`。provider、model profile、工作目录或持续主题发生变化时新建会话；分支方案使用独立 fork。
+
+外部协作者只能修改允许路径，不能提交、推送、合并、部署、发布、改写 Git 历史、全局安装、访问密钥或运行未批准命令。脚本检测到的越界修改即使模型报告成功也不能视为成功。
+
+高风险 execute 完成后，Codex 检查验证结果，再可运行 `scripts/review_execution.py --run-id <run_id> --provider <different-provider-key>` 做一次只读独立审查；不得自动回调执行者。完成 run 的质量/采纳结果可用 `scripts/assess_run.py` 按 run ID 写入匿名指标。
+
+## 向用户报告
+
+说明 provider、action、会话连续性、主要贡献、变更文件、Codex 执行的验证和未解决风险。不要因为 CLI harness 是 Claude Code 就把底层模型称为 Claude。
