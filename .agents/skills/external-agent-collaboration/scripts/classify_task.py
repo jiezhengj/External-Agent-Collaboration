@@ -18,7 +18,12 @@ def contains(text: str, terms: tuple[str, ...]) -> bool:
     return any(term.lower() in lower for term in terms)
 
 
-def classify(text: str) -> dict[str, str | float]:
+def efficiency_fields(result: dict[str, str | float], text: str) -> dict[str, str | float | bool]:
+    size = len(text.encode("utf-8"))
+    large = result.get("context_size") == "large"
+    return {"estimated_input_bytes": size, "estimated_return_bytes": min(8192, max(512, size // 5)), "return_ratio": round(min(8192, max(512, size // 5)) / max(size, 1), 4), "batchable": bool(large and result.get("risk") != "prohibited" and result.get("task_type") in {"document", "data", "research"}), "recommended_return_mode": "file_only" if large else "compact", "review_policy": "exception" if result.get("risk") == "high" else "none", "token_policy": "batch" if large else "delegate" if result.get("delegation") == "external_agent" else "direct"}
+
+def classify(text: str) -> dict[str, str | float | bool]:
     normalized = text.strip()
     if not normalized:
         raise ValueError("Request text is empty.")
@@ -62,7 +67,9 @@ def main() -> int:
     args = parser.parse_args()
     path = Path(args.request_file).resolve()
     try:
-        result = classify(path.read_text(encoding="utf-8"))
+        source = path.read_text(encoding="utf-8")
+        result = classify(source)
+        result.update(efficiency_fields(result, source))
     except (OSError, ValueError) as exc:
         print(str(exc))
         return 2

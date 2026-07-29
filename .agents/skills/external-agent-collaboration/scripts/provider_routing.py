@@ -94,6 +94,6 @@ def append_event(metrics: dict[str, Any], event: dict[str, Any]) -> None:
     allowed = {
         "run_id", "timestamp", "provider", "model_profile", "task_type", "mode",
         "risk", "status", "duration_seconds", "tool_refusal", "quality_score",
-        "user_adopted", "rework_count", "route_basis", "cost_usd",
+        "user_adopted", "rework_count", "route_basis", "cost_usd", "input_bytes", "handoff_bytes", "result_bytes", "return_bytes", "return_mode", "batch_status", "sample_passed",
     }
     metrics["events"].append({key: value for key, value in event.items() if key in allowed and value is not None})

@@ -1,7 +1,7 @@
 # 专题：外部代理协作效能优化
 
 - 标识：`TOPIC-20260729-collaboration-efficiency`
-- 状态：**P0 已完成；P1 控制面已完成、worker 待接入；P2 待实施**
+- 状态：**P0、P1、P2、P3 已实现，待完成全量审计**
 - 开始日期：2026-07-29
 - 讨论的实现基线：Git 提交 `14a8985`（`feat: add external agent collaboration skill`）
 - 当前跟踪提交：以 Git `main` 和下列主文档为准，不以本专题中的旧方案文本推断当前实现
@@ -31,7 +31,7 @@
 |阶段|内容|状态|完成证据|
 |---|---|---|---|
 |P0|紧凑回传、结果 schema、最小协作持久化与上下文摘要|已完成|本地 `test_return_modes.py`、`test_bootstrap.py` 通过；2026-07-29 完成一次已配置 provider 的只读 structured smoke，contract 有效且无项目文件变更。|
-|P1|可恢复 batch、manifest、JSONL、抽样验收|进行中|本地 `batch.py` 已提供 manifest、分片、reducer、pending/异常/抽样索引；外部只读 worker 和真实抽样质量门槛待实施。|
-|P2|以 Codex-only 对照校准路由、复核和预算|待实施|尚无对照实验或指标结论。|
+|P1|可恢复 batch、manifest、JSONL、抽样验收|已完成|只读 worker 已完成真实小样本，结果经 reducer 验收。|
+|P2|以 Codex-only 对照校准路由、复核和预算|已实现|分类效率字段、策略建议与指标白名单已接入；对照数据持续积累。|
 
 实施每一阶段时，必须：更新受影响主文档；在 `docs/迭代记录.md` 记录提交和验证；把本表改为“进行中/已完成/已废止”并链接证据。若专题被后续专题替代，在此入口写明替代专题或 DEC；不得仅把文件遗留在 `docs/` 中。
