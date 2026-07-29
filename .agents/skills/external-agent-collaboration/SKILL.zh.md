@@ -19,7 +19,7 @@
 1. 存在时读取 `.ai-collaboration/project-context.md` 和 `decisions.md`；继续某个主题时，只定位并读取 `.ai-collaboration/topics/` 中对应的一页状态，不默认加载 runtime output 或 transcript。
 2. 写入不含敏感内容的请求文件，运行 `scripts/classify_task.py`，并阅读 [任务分类说明](references/task-classification.md)。结果为 `prohibited` 时停止；结果为 `native_codex` 时使用原生工具；只有 `external_agent` 或已记录的合理覆盖才继续。
 3. 明确 action、主题、工作目录、允许路径、必要检查和 provider。
-4. 尊重用户指定的 provider；否则恢复精确匹配的活动会话；新主题使用 [协作协议](references/collaboration-protocol.md) 中的路由规则。
+4. 尊重用户指定的 provider；否则恢复精确匹配的活动会话；新主题使用 [协作协议](references/collaboration-protocol.md) 中的路由规则。大量非敏感文本先按 [batch 协议](references/batch-protocol.md) 生成并审阅 dry-run manifest，绝不使用一次大范围 `execute`。
 5. execute 需要新建文件/目录且能力记录缺失、超过七天、CLI/profile 变化或发生工具失败时，运行 `scripts/probe_capabilities.py --provider <provider>`。
 6. 同时检查 provider 能力记录和 session 的 `initial_toolset`。新 session 的能力不能直接套用给旧 session。需要时 fork/new session；只有实测原生创建不可用时，才使用最小精确 Bash 创建白名单。
 7. 将简洁 handoff 写入 `.ai-collaboration/handoffs/`。每个 execute 都必须按 [expected outcomes](references/expected-outcomes.md) 写 outcomes JSON。持续主题同时传入简短的 `--topic-goal` 和 `--stop-rule`，用于更新一页本地 topic 状态，而非保存 transcript。
