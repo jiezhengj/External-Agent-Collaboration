@@ -15,10 +15,9 @@ SPEC.loader.exec_module(review)
 
 
 def main() -> None:
-    assert review.review_provider("mimo", "auto") == "deepseek"
-    assert review.review_provider("deepseek", "auto") == "mimo"
+    assert review.review_provider("provider_a", "provider_b") == "provider_b"
     try:
-        review.review_provider("mimo", "mimo")
+        review.review_provider("provider_a", "provider_a")
     except ValueError:
         pass
     else:

@@ -1,22 +1,22 @@
 {
-  "mimo": {
-    "config_dir": "/Users/your-name/.claude-mimo",
-    "launcher": "/Users/your-name/.local/bin/claude",
+  "provider_a": {
+    "config_dir": "/Users/your-name/.claude-provider-a",
+    "launcher": "claude",
     "model": "opus",
-    "auth_token_keychain_service": "codex-external-agent/mimo",
+    "auth_token_keychain_service": "external-agent-collaboration/provider_a",
     "environment": {
-      "ANTHROPIC_BASE_URL": "https://api.xiaomimimo.com/anthropic",
-      "ANTHROPIC_MODEL": "mimo-v2.5-pro[1M]"
+      "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
+      "ANTHROPIC_MODEL": "your-model-id"
     }
   },
-  "deepseek": {
-    "config_dir": "/Users/your-name/.claude-deepseek",
-    "launcher": "/Users/your-name/.local/bin/claude",
+  "provider_b": {
+    "config_dir": "/Users/your-name/.claude-provider-b",
+    "launcher": "claude",
     "model": "opus",
-    "auth_token_keychain_service": "codex-external-agent/deepseek",
+    "auth_token_keychain_service": "external-agent-collaboration/provider_b",
     "environment": {
-      "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
-      "ANTHROPIC_MODEL": "deepseek-v4-pro[1M]"
+      "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
+      "ANTHROPIC_MODEL": "your-model-id"
     }
   }
 }

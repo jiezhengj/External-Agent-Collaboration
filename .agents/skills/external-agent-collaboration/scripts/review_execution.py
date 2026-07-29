@@ -29,15 +29,11 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def review_provider(source: str, requested: str) -> str:
-    if requested != "auto":
-        if requested == source:
-            raise ValueError("Independent critique must use the other provider.")
-        return requested
-    if source == "mimo":
-        return "deepseek"
-    if source == "deepseek":
-        return "mimo"
-    raise ValueError("Unknown execution provider.")
+    if requested == "auto":
+        raise ValueError("Specify --provider for an independent critique; provider profiles are user-defined.")
+    if requested == source:
+        raise ValueError("Independent critique must use a provider other than the executor.")
+    return requested
 
 
 def handoff_text(record: dict[str, Any]) -> str:
@@ -57,7 +53,7 @@ def handoff_text(record: dict[str, Any]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--provider", default="auto", choices=("auto", "mimo", "deepseek"))
+    parser.add_argument("--provider", required=True, help="Configured provider key other than the executor")
     parser.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args()
     source_path = CONTROL / "outputs" / f"{args.run_id}.json"

@@ -39,6 +39,24 @@ The project-local Skill includes these parts:
 | Independent reviewer | Request one bounded critique from a provider other than the executor. |
 | Metrics recorder | Store routing metadata without storing prompts, tokens, or file contents. |
 
+## Quick Start after Fork
+
+Prerequisites: Python 3.10+ and a working local Claude Code CLI. Clone or fork the repository, then initialize only local runtime files:
+
+```bash
+python3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
+```
+
+This creates ignored runtime directories and copies the public example to `.ai-collaboration/providers.local.json` **only when that private file does not already exist**. It never reads, prints, or sends credentials.
+
+Edit the copied profile: replace placeholder endpoint/model values, choose your provider keys, set an isolated existing `CLAUDE_CONFIG_DIR` for each profile, and configure authentication locally. Then verify a configured provider without printing its secret:
+
+```bash
+python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
+```
+
+Use `bootstrap.py --check` to verify only file and directory setup. It deliberately does not validate credential values.
+
 ## Suggested workflow
 
 1. Read the local project context, current state, and recorded decisions.

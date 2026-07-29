@@ -49,7 +49,7 @@ The external collaborator may edit only the passed allowed paths. It may not com
 
 After every call, read the generated result and log. For code, shell, security, architecture, or factual claims, inspect the change summary and independently run the required validation before reporting completion. For low-risk drafts or brainstorming, preserve the collaborator's distinct contribution when useful.
 
-For a high-risk completed `execute`, run `scripts/review_execution.py --run-id <run_id>` once after Codex has inspected the required validation. It creates a read-only critique with the other provider and never calls the executor again automatically. For creative or planning work, use one explicit provider per candidate; compare candidates in Codex instead of asking providers to debate each other.
+For a high-risk completed `execute`, run `scripts/review_execution.py --run-id <run_id> --provider <different-provider-key>` once after Codex has inspected the required validation. It creates a read-only critique with the other provider and never calls the executor again automatically. For creative or planning work, use one explicit provider per candidate; compare candidates in Codex instead of asking providers to debate each other.
 
 After Codex judges a completed external run or observes user adoption, call `scripts/assess_run.py --run-id <id> --quality-score 0..5 --user-adopted true|false --rework-count <n>`. It updates only the anonymous metric event; never put the assessment rationale or user content in the metrics file.
 

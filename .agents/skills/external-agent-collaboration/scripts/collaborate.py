@@ -101,7 +101,7 @@ def profile_problem(profile: dict[str, Any]) -> str | None:
 
 
 def alternate_provider(current: str, available: dict[str, dict[str, Any]]) -> tuple[str, dict[str, Any]] | None:
-    for candidate in ("mimo", "deepseek"):
+    for candidate in sorted(available):
         profile = available.get(candidate)
         if candidate != current and profile and profile_problem(profile) is None:
             return candidate, profile
@@ -175,7 +175,7 @@ def select_provider(requested: str, topic: str, workdir: Path, sessions: list[di
         return str(matches[0]["provider"]), matches[0], False, {"basis": "exact_active_session"}
     if len(matches) > 1:
         raise CollaborationError("Multiple active sessions match topic/workdir; select a provider or --session-key.")
-    candidates = [provider for provider in ("mimo", "deepseek") if provider in available]
+    candidates = sorted(available)
     if not candidates:
         raise CollaborationError("No configured provider profiles are available.")
     chosen, route = choose_provider(metrics, candidates, task_type, mode)
@@ -495,7 +495,7 @@ def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdi
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--action", required=True, choices=("consult", "continue", "draft", "critique", "execute"))
-    parser.add_argument("--provider", default="auto", choices=("auto", "mimo", "deepseek"))
+    parser.add_argument("--provider", default="auto")
     parser.add_argument("--topic", required=True)
     parser.add_argument("--handoff", required=True)
     parser.add_argument("--working-directory", default=str(PROJECT_ROOT))

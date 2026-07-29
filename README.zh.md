@@ -37,6 +37,24 @@
 |独立审查器|请求与执行者不同的 provider 进行一次受限 critique。|
 |指标记录器|保存路由元数据，不保存提示词、token 或文件正文。|
 
+## Fork 后快速开始
+
+前置条件：Python 3.10+，以及可在本机运行的 Claude Code CLI。Fork 或克隆仓库后，先初始化仅限本地的运行文件：
+
+```bash
+python3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
+```
+
+该命令会创建被 Git 忽略的运行目录；仅当私有配置尚不存在时，才把公开示例复制为 `.ai-collaboration/providers.local.json`。它不会读取、输出或发送任何凭证。
+
+编辑复制后的 profile：替换示例 endpoint 和模型值，选择自己的 provider key，为每份 profile 设置已存在且隔离的 `CLAUDE_CONFIG_DIR`，并在本地配置认证。随后可在不显示密钥的情况下检查某一 provider：
+
+```bash
+python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
+```
+
+使用 `bootstrap.py --check` 只检查文件和目录是否就绪；它刻意不验证凭证值。
+
 ## 建议使用流程
 
 1. 读取本地项目背景、当前状态和已确认决策。

@@ -71,7 +71,7 @@ def invoke(provider: str, topic: str, handoff: Path, outcomes: Path, target: Pat
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True, choices=("mimo", "deepseek"))
+    parser.add_argument("--provider", required=True, help="Provider key from providers.local.json")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--max-age-hours", type=int, default=168)
     args = parser.parse_args()

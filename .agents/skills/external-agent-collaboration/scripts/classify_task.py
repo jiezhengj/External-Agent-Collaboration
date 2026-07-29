@@ -49,7 +49,7 @@ def classify(text: str) -> dict[str, str | float]:
     context_size = "large" if contains(normalized, ("全部", "大量", "几十", "所有文件", "whole repo", "many files", "long context")) else "medium" if len(normalized) > 500 else "small"
     risk = "high" if task_type == "code" and mode in {"execute", "verify"} else "medium" if mode == "execute" else "low"
     tool_requirement = "shell" if task_type == "code" and mode == "execute" else "file_edit" if mode == "execute" else "read_only"
-    worthwhile = context_size == "large" or mode in {"critique", "execute"} or contains(normalized, ("第二意见", "独立", "外部模型", "mimo", "deepseek", "协作"))
+    worthwhile = context_size == "large" or mode in {"critique", "execute"} or contains(normalized, ("第二意见", "独立", "外部模型", "协作"))
     delegation = "external_agent" if worthwhile else "direct"
     reason = "Bounded local execution, large local context, or independent review benefits from collaboration." if worthwhile else "Task appears small enough for Codex to handle directly."
     return {"task_type": task_type, "mode": mode, "risk": risk, "context_size": context_size, "tool_requirement": tool_requirement, "delegation": delegation, "reason": reason, "confidence": 0.65}
