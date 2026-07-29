@@ -4,17 +4,17 @@
 
 ## Purpose
 
-This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex. The intended collaborators are MiMo and DeepSeek, reached through the local Claude Code CLI. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
+This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex through the local Claude Code CLI. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
 
 The project exists because a simple one-off model call is not enough for longer local work. A useful collaboration setup needs to keep providers and sessions separate, retain project context, constrain file edits, and verify what actually changed.
 
-This is not a claim that one model is always better than another. Provider choice should follow local evidence from comparable tasks.
+This is not tied to a particular model vendor. The operator supplies local provider profiles and model mappings for the services they use. MiMo and DeepSeek are examples from the original local setup, not requirements of this project. Provider choice should follow local evidence from comparable tasks.
 
 ## Functional requirements
 
 The workflow is designed to provide the following behavior.
 
-1. **One entry point.** Users work with Codex. External collaborators are invited only when they add value, such as large local context, a bounded implementation task, or an independent review.
+1. **One entry point.** Users work with Codex. External collaborators from any configured provider are invited only when they add value, such as large local context, a bounded implementation task, or an independent review.
 2. **Separate persistent sessions.** A session is bound to a topic, provider, model profile, and working directory. Recovery uses a saved session ID, never an ambiguous “latest session” option.
 3. **Task-aware delegation.** Before a call, classify the request by task type, work mode, risk, context size, and required tools. Small requests stay with Codex; current information, connected services, images, spreadsheets, presentations, PDFs, and final formatted office files use native Codex tools.
 4. **Evidence-based routing.** New topics start with balanced provider rotation. Later, local results for the same task type and mode can inform routing using quality, completion, duration, cost, tool refusal, rework, and adoption metadata.
