@@ -31,6 +31,29 @@ SENSITIVE_PARTS = {".git", "secrets", "credentials", "private"}
 SENSITIVE_NAMES = {".env", "id_rsa", "id_ed25519"}
 CONTROL_PARTS = {".ai-collaboration", ".git"}
 MAX_SNAPSHOT_BYTES = 500 * 1024 * 1024
+RETURN_MODES = ("compact", "structured", "file_only", "debug")
+COMPACT_RETURN_BYTES = 8 * 1024
+STRUCTURED_RETURN_BYTES = 16 * 1024
+TOPIC_STATE_MAX_CHARS = 4096
+SECRET_VALUE_PATTERNS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+)
+
+RESPONSE_CONTRACT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["summary", "changed_files", "commands_run", "validation_results", "risks", "uncertainty"],
+    "properties": {
+        "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "changed_files": {"type": "array", "maxItems": 40, "items": {"type": "string", "maxLength": 300}},
+        "commands_run": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 300}},
+        "validation_results": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 600}},
+        "risks": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 600}},
+        "uncertainty": {"type": "string", "maxLength": 1200},
+    },
+    "additionalProperties": False,
+}
 
 
 class CollaborationError(RuntimeError):
@@ -244,7 +267,17 @@ def output_path(run_id: str, suffix: str) -> Path:
     return CONTROL_ROOT / suffix / f"{run_id}.json"
 
 
-def build_prompt(action: str, topic: str, handoff: str, allow_paths: list[Path], commands: list[str]) -> str:
+def response_contract_instruction(return_mode: str) -> str:
+    if return_mode == "debug":
+        return "Return a concise final response; the caller is in explicit debug mode."
+    return """Return exactly one JSON object and no Markdown fence. Its required keys are:
+summary (string, at most 4096 characters), changed_files (array of at most 40 short paths),
+commands_run (array of at most 20 short commands), validation_results (array of at most 20 short results),
+risks (array of at most 20 short items), and uncertainty (short string). Do not include any other keys.
+This response contract is separate from machine expected outcomes; never claim an outcome passed unless you ran it."""
+
+
+def build_prompt(action: str, topic: str, handoff: str, allow_paths: list[Path], commands: list[str], return_mode: str) -> str:
     operation = "You may edit files only in the allowed paths." if action == "execute" else "Do not edit files; return your work in the final response."
     return f"""You are a persistent external collaborator for the topic: {topic}.
 Action: {action}.
@@ -253,6 +286,9 @@ Allowed project-relative paths: {', '.join(path.as_posix() for path in allow_pat
 Allowed shell command patterns: {', '.join(commands) or '(none)'}.
 Never read secrets, commit, push, deploy, publish, rewrite Git history, install global packages, or invoke another agent.
 Complete only this handoff. Report files changed, commands run, validation results, remaining risks, and uncertainty.
+
+Response contract:
+{response_contract_instruction(return_mode)}
 
 Handoff:
 {handoff}
@@ -413,6 +449,8 @@ def schema_errors(value: Any, schema: dict[str, Any], location: str = "$") -> li
     if isinstance(value, str):
         if isinstance(schema.get("minLength"), int) and len(value) < schema["minLength"]:
             errors.append(f"{location}: shorter than minLength")
+        if isinstance(schema.get("maxLength"), int) and len(value) > schema["maxLength"]:
+            errors.append(f"{location}: longer than maxLength")
         if isinstance(schema.get("pattern"), str) and re.search(schema["pattern"], value) is None:
             errors.append(f"{location}: does not match pattern")
     if isinstance(value, list):
@@ -439,6 +477,136 @@ def schema_errors(value: Any, schema: dict[str, Any], location: str = "$") -> li
                 if extras:
                     errors.append(f"{location}: unexpected properties {sorted(extras)}")
     return errors
+
+
+def truncate_utf8(value: str, limit: int) -> tuple[str, bool]:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= limit:
+        return value, False
+    clipped = encoded[:limit]
+    while clipped:
+        try:
+            return clipped.decode("utf-8") + "…", True
+        except UnicodeDecodeError:
+            clipped = clipped[:-1]
+    return "…", True
+
+
+def redact_return_text(value: str) -> str:
+    redacted = value
+    for pattern in SECRET_VALUE_PATTERNS:
+        redacted = pattern.sub("[REDACTED_SECRET]", redacted)
+    return redacted
+
+
+def redact_return_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_return_text(value)
+    if isinstance(value, list):
+        return [redact_return_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: redact_return_value(item) for key, item in value.items()}
+    return value
+
+
+def one_line(value: str, limit: int) -> str:
+    compact = " ".join(redact_return_text(value).split())
+    return truncate_utf8(compact, limit)[0]
+
+
+def result_text(result: dict[str, Any]) -> str:
+    value = result.get("result")
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+    raw = result.get("result")
+    if not isinstance(raw, str):
+        return None, ["result is not a JSON string"]
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, [f"result is not valid JSON: {exc.msg}"]
+    errors = schema_errors(value, RESPONSE_CONTRACT_SCHEMA)
+    if errors:
+        return None, errors[:12]
+    return value, []
+
+
+def compact_outcomes(outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for item in outcomes[:20]:
+        record = {key: item[key] for key in ("type", "path", "command", "passed", "count") if key in item}
+        if isinstance(item.get("error"), str):
+            record["error"] = one_line(item["error"], 240)
+        compact.append(record)
+    return compact
+
+
+def bounded_payload(payload: dict[str, Any], limit: int) -> dict[str, Any]:
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) <= limit:
+        return payload
+    fallback = {
+        "run_id": payload.get("run_id"), "status": payload.get("status"), "provider": payload.get("provider"),
+        "action": payload.get("action"), "topic": payload.get("topic"), "output_path": payload.get("output_path"),
+        "truncated": True, "message": "Return envelope exceeded its budget; inspect the local output path by explicit request.",
+    }
+    return fallback
+
+
+def return_payload(return_mode: str, record: dict[str, Any], output_rel: str, response: dict[str, Any] | None, contract_errors: list[str]) -> dict[str, Any]:
+    common = {
+        "run_id": record["run_id"], "status": record["status"], "provider": record["provider"],
+        "action": record["action"], "task_type": record["task_type"], "mode": record["mode"],
+        "topic": record["topic"], "routing": record["routing"], "output_path": output_rel,
+        "result_contract_failed": bool(contract_errors),
+    }
+    if return_mode == "debug":
+        return record
+    if return_mode == "file_only":
+        payload = {**common, "output_sha256": hashlib.sha256(json.dumps(record, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()}
+        return bounded_payload(payload, COMPACT_RETURN_BYTES)
+    if return_mode == "structured" and response is not None:
+        return bounded_payload({**common, "response": redact_return_value(response), "changed_files": record["changed_files"], "outcome_results": compact_outcomes(record["outcome_results"])}, STRUCTURED_RETURN_BYTES)
+    summary, truncated = truncate_utf8(redact_return_text(result_text(record["result"])), 3072)
+    payload = {
+        **common, "result_summary": summary, "result_truncated": truncated,
+        "changed_files": record["changed_files"][:40], "changed_file_count": len(record["changed_files"]),
+        "restored_violations": record["restored_violations"][:20],
+        "outcome_results": compact_outcomes(record["outcome_results"]),
+    }
+    if contract_errors:
+        payload["result_contract_errors"] = [one_line(item, 240) for item in contract_errors[:12]]
+    return bounded_payload(payload, COMPACT_RETURN_BYTES)
+
+
+def topic_filename(topic: str) -> str:
+    slug = re.sub(r"[^\w.-]+", "-", topic, flags=re.UNICODE).strip(".-")[:72] or "topic"
+    digest = hashlib.sha256(topic.encode("utf-8")).hexdigest()[:8]
+    return f"{slug}-{digest}.md"
+
+
+def write_topic_state(topic: str, workdir: Path, goal: str | None, stop_rule: str | None, status: str, action: str, changed: list[str], output_rel: str) -> str:
+    path = CONTROL_ROOT / "topics" / topic_filename(topic)
+    scope = ", ".join(f"`{name}`" for name in changed[:12]) or "No project files changed in this run."
+    text = f"""# Topic: {topic}
+
+- Goal: {one_line(goal or 'Continue the scoped work for this topic.', 600)}
+- Scope: {scope}
+- Decisions: Read `decisions.md` only when a confirmed decision is needed.
+- State: {status} after `{action}`.
+- Next: Inspect the recorded outcomes and continue only if the stop rule is not met.
+- Evidence: `{output_rel}`
+- Stop rule: {one_line(stop_rule or 'Complete the machine outcomes and resolve recorded exceptions.', 600)}
+"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(truncate_utf8(text, TOPIC_STATE_MAX_CHARS)[0] + "\n", encoding="utf-8")
+    return str(path.relative_to(PROJECT_ROOT))
 
 
 def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdir: Path, validation_commands: list[str]) -> list[dict[str, Any]]:
@@ -512,13 +680,16 @@ def main() -> int:
     parser.add_argument("--mode", choices=("analyze", "draft", "critique", "revise", "execute", "verify"))
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--ephemeral", action="store_true")
+    parser.add_argument("--return-mode", choices=RETURN_MODES, default="compact", help="stdout shape; full CLI JSON always remains in local outputs.")
+    parser.add_argument("--topic-goal", help="Short durable goal for the one-page topic state; never include secrets or a full handoff.")
+    parser.add_argument("--stop-rule", help="Short durable stop rule for the one-page topic state.")
     args = parser.parse_args()
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     started_monotonic = time.monotonic()
     action_modes = {"consult": "analyze", "continue": "analyze", "draft": "draft", "critique": "critique", "execute": "execute"}
     task_type = args.task_type or "planning"
     mode = args.mode or action_modes[args.action]
-    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode}
+    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode}
     try:
         if args.timeout < 1:
             raise CollaborationError("--timeout must be positive.")
@@ -596,7 +767,7 @@ def main() -> int:
         if args.action == "execute":
             checkpoint = copy_checkpoint(run_id)
             before = manifest(PROJECT_ROOT)
-        prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands)
+        prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode)
         exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout)
         log.update({"exit_code": exit_code, "stderr": stderr[-4000:]})
 
@@ -659,8 +830,11 @@ def main() -> int:
             "rework_count": 0, "route_basis": route.get("basis"),
         })
         write_json(METRICS_FILE, metrics)
-        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results}
-        write_json(output_path(run_id, "outputs"), result_record)
+        response, contract_errors = parse_response_contract(result)
+        output_file = output_path(run_id, "outputs")
+        output_rel = str(output_file.relative_to(PROJECT_ROOT))
+        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "result_contract": {"valid": response is not None, "errors": contract_errors}}
+        write_json(output_file, result_record)
         if not args.ephemeral and isinstance(result.get("session_id"), str):
             parent_key = session.get("key") if effective_fork and session else None
             if session is None or effective_fork:
@@ -671,9 +845,13 @@ def main() -> int:
             topic_data = topics_registry()
             register_topic_session(topic_data, session, parent_key)
             write_json(TOPICS_FILE, topic_data)
+        if not args.ephemeral:
+            result_record["topic_state_path"] = write_topic_state(args.topic, workdir, args.topic_goal, args.stop_rule, status, args.action, changed, output_rel)
+            write_json(output_file, result_record)
         log["finished_at"] = now()
+        log["result_contract"] = result_record["result_contract"]
         write_json(output_path(run_id, "logs"), log)
-        print(json.dumps(result_record, ensure_ascii=False, indent=2))
+        print(json.dumps(return_payload(args.return_mode, result_record, output_rel, response, contract_errors), ensure_ascii=False, indent=2))
         return 0 if status == "completed" else 3
     except CollaborationError as exc:
         log.update({"status": "failed", "error": str(exc), "finished_at": now()})

@@ -25,6 +25,12 @@
 - 需要运行的校验与 machine-readable expected outcomes；
 - 输出位置、未决问题和禁止行为。
 
+## 回传与最小状态
+
+`collaborate.py` 默认 `--return-mode compact`：stdout 最多返回 8 KiB 的 run/status/outcomes、受限摘要、变更索引和 local output 路径；完整 CLI JSON 仅写入 ignored 的 `outputs/`。`structured` 只接受 `summary`、`changed_files`、`commands_run`、`validation_results`、`risks`、`uncertainty` 六字段的受限 JSON；不合约时记录 `result_contract_failed`，但不取代 execute 的机器 outcomes。`file_only` 只返回索引与 hash；`debug` 才返回完整 record。
+
+bootstrap 创建但不覆盖 `project-context.md`、`decisions.md` 与 `topics/`。每个非 ephemeral run 只更新对应主题的一页状态：目标、范围、状态、下一步、证据路径和 stop rule。不得写入完整 handoff、模型推理、聊天或完整 provider 输出。
+
 ## 结束状态
 
 - `completed`：机器 expected outcomes、范围检查和规定校验均通过。
