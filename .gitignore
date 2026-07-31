@@ -7,5 +7,9 @@ history/
 # Runtime state can contain credentials, session IDs, handoffs, provider output,
 # local paths, or user/project context. Keep it local by default.
 .ai-collaboration/*
+!.ai-collaboration/providers.shared.json
+!.ai-collaboration/providers.shared.example.json
 !.ai-collaboration/providers.local.example.json
+!.ai-collaboration/providers.local.windows.example.json
+!.ai-collaboration/providers.local.macos.example.json
 !.ai-collaboration/trusted-providers.local.example.json

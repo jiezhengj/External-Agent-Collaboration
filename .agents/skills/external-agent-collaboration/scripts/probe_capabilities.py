@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
@@ -12,10 +11,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from platform_support import host_platform, supports_posix_shell_fallback
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
-PROFILE_FILE = CONTROL_ROOT / "providers.local.json"
 CAPABILITIES_FILE = CONTROL_ROOT / "provider-capabilities.json"
 COLLABORATE = Path(__file__).with_name("collaborate.py")
 
@@ -36,18 +35,13 @@ def write_json(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
-def profile_fingerprint(profile: dict[str, Any]) -> str:
-    safe = {key: value for key, value in profile.items() if key not in {"auth_token", "auth_token_keychain_service"}}
-    return hashlib.sha256(json.dumps(safe, sort_keys=True).encode()).hexdigest()
-
-
 def cli_version(profile: dict[str, Any]) -> str:
     result = subprocess.run([str(profile.get("launcher", "claude")), "--version"], capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else "unavailable"
 
 
 def fresh(record: dict[str, Any] | None, fingerprint: str, version: str, max_age_hours: int) -> bool:
-    if not record or record.get("profile_fingerprint") != fingerprint or record.get("claude_cli_version") != version:
+    if not record or record.get("host_platform") != host_platform() or record.get("profile_fingerprint") != fingerprint or record.get("claude_cli_version") != version:
         return False
     try:
         checked = datetime.fromisoformat(str(record["checked_at"]))
@@ -71,17 +65,22 @@ def invoke(provider: str, topic: str, handoff: Path, outcomes: Path, target: Pat
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True, help="Provider key from providers.local.json")
+    parser.add_argument("--provider", required=True, help="Provider key from providers.shared.json or providers.local.json")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--max-age-hours", type=int, default=168)
     args = parser.parse_args()
 
-    profiles = read_json(PROFILE_FILE, {})
+    try:
+        import collaborate
+        profiles = collaborate.profiles()
+    except Exception as exc:
+        print(f"Provider profile unavailable: {exc}", file=sys.stderr)
+        return 2
     profile = profiles.get(args.provider)
     if not isinstance(profile, dict):
         print(f"Provider profile unavailable: {args.provider}", file=sys.stderr)
         return 2
-    fingerprint = profile_fingerprint(profile)
+    fingerprint = collaborate.profile_fingerprint(profile)
     version = cli_version(profile)
     data = read_json(CAPABILITIES_FILE, {"schema_version": 1, "providers": {}})
     existing = data.setdefault("providers", {}).get(args.provider)
@@ -106,7 +105,7 @@ def main() -> int:
     bash_create = None
     fallback_exit = None
     fallback_output = ""
-    if not native_write:
+    if not native_write and supports_posix_shell_fallback():
         fallback_target = lab / "bash-create.md"
         touch = f"touch {fallback_target.relative_to(PROJECT_ROOT)}"
         fallback_handoff = CONTROL_ROOT / "handoffs" / f"capability-{args.provider}-{run_id}-bash.md"
@@ -121,6 +120,7 @@ def main() -> int:
 
     record = {
         "checked_at": now(), "profile_fingerprint": fingerprint, "claude_cli_version": version,
+        "host_platform": host_platform(), "shell_kind": "posix" if supports_posix_shell_fallback() else "none",
         "native_write": native_write, "bash_create_fallback": bash_create,
         "evidence": {"native_exit_code": native_exit, "fallback_exit_code": fallback_exit},
         "lab_directory": str(lab.relative_to(PROJECT_ROOT)),

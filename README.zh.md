@@ -42,15 +42,23 @@
 前置条件：Python 3.10+，以及可在本机运行的 Claude Code CLI。Fork 或克隆仓库后，先初始化仅限本地的运行文件：
 
 ```bash
+# macOS / Linux
 python3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
+
+# Windows PowerShell 或命令提示符
+py -3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
 ```
 
-该命令会创建被 Git 忽略的运行目录；仅当私有配置尚不存在时，才把公开示例复制为 `.ai-collaboration/providers.local.json`。它不会读取、输出或发送任何凭证。
+该命令会创建运行目录，并确保存在可同步的 `.ai-collaboration/providers.shared.json`。共享文件只保存不含 token 的 provider 定义、相对主目录配置目录和逻辑启动器；它不读取、输出或发送任何凭证。
 
-编辑复制后的 profile：替换示例 endpoint 和模型值，选择自己的 provider key，为每份 profile 设置已存在且隔离的 `CLAUDE_CONFIG_DIR`，并在本地配置认证。随后可在不显示密钥的情况下检查某一 provider：
+编辑共享 profile 后，再分别维护 `.ai-collaboration/providers.local.macos.json` 与 `.ai-collaboration/providers.local.windows.json`：每份平台文件可直接保存该平台的 `auth_token`、launcher 和隔离 `CLAUDE_CONFIG_DIR`。这些文件被 Git 忽略；是否由你的私有同步工具同步由你决定。项目不要求使用环境变量、macOS Keychain 或 Windows Credential Manager。随后可在不显示密钥的情况下检查某一 provider：
 
 ```bash
+# macOS / Linux
 python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
+
+# Windows PowerShell 或命令提示符
+py -3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
 ```
 
 通过诊断不等于授权外发。确认该 provider 可接收本项目的最小非敏感 handoff 后，再在本机写入与当前非密钥 profile 指纹绑定的批准记录：
@@ -60,6 +68,8 @@ python3 .agents/skills/external-agent-collaboration/scripts/trust_provider.py --
 ```
 
 profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，批准自动失效，必须由用户重新执行该命令。该机制不读取或打印凭证，也不绕过 Codex 宿主的最终外发审批。
+
+配置文件直接 token 是本项目认可的默认方式。旧版通用 `providers.local.json` 可继续使用；需要分别维护平台路径时，将对应 profile 放入 `providers.local.macos.json` 或 `providers.local.windows.json`。不要运行将 token 迁移至环境变量或 OS 凭据库的工具，除非你日后主动改变这一原则。
 
 使用 `bootstrap.py --check` 只检查文件和目录是否就绪；它刻意不验证凭证值。
 
@@ -87,7 +97,7 @@ profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，
 
 ## 配置原则
 
-provider 凭证仅保存在 Git 忽略的本地配置中，具体格式不写入公开 README。仓库中不得出现 token、endpoint 凭证、会话 transcript、能力实验产物或含私人信息的运行日志。
+版本化的共享 profile 不得保存 token、绝对用户目录、平台专属启动器路径、会话 transcript、能力实验产物或含私人信息的运行日志。provider token 可直接保存在 Git 忽略的平台 local profile 中；是否同步这些私有配置文件由用户决定。无论存储方式如何，token 都不得进入 handoff、输出、日志、测试 fixture 或外部提示词。
 
 每份 profile 只提供本地 CLI 所需内容：隔离配置目录、launcher、CC Switch/Claude Code 的环境模型映射、非密钥环境配置和本地认证。运行器不传 `--model`，因此不会覆盖 provider 内部的 FABLE/OPUS/SONNET/HAIKU/SUBAGENT 映射；它也不把 Flash/Base/Pro 当作跨 provider 路由对象。运行器只能将凭证注入子进程环境，不能写入 handoff 或输出记录。
 

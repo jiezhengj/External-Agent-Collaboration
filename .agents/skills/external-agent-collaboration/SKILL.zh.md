@@ -27,7 +27,7 @@
 3. 明确 action、主题、工作目录、允许路径、必要检查和 provider。首次真实外部调用前，必须由用户用 `trust_provider.py --provider <key> --approve` 明确批准该 provider 的当前本地 profile；该命令只写入本地非密钥指纹。没有信任记录时，不得把普通“实施”请求解释为新的外发授权。
 4. 尊重用户指定的 provider；否则恢复精确匹配的活动会话；新主题使用 [协作协议](references/collaboration-protocol.md) 中的路由规则。大量非敏感文本先按 [batch 协议](references/batch-protocol.md) 生成并审阅 dry-run manifest，绝不使用一次大范围 `execute`。
 5. execute 需要新建文件/目录且能力记录缺失、超过七天、CLI/profile 变化或发生工具失败时，运行 `scripts/probe_capabilities.py --provider <provider>`。
-6. 同时检查 provider 能力记录和 session 的 `initial_toolset`。新 session 的能力不能直接套用给旧 session。需要时 fork/new session；只有实测原生创建不可用时，才使用最小精确 Bash 创建白名单。
+6. 同时检查 provider 能力记录和 session 的 `initial_toolset`。能力记录只描述同一主机平台上的新 session，旧 session 也不能直接套用。不同主机平台或 workspace identity 的 session 不得恢复。需要时 fork/new session；只有当前能力记录明确实测为 POSIX shell 时，才使用最小精确 Bash 创建白名单，否则安全停止。
 7. 将简洁 handoff 写入 `.ai-collaboration/handoffs/`。每个 execute 都必须按 [expected outcomes](references/expected-outcomes.md) 写 outcomes JSON。持续主题同时传入简短的 `--topic-goal` 和 `--stop-rule`，用于更新一页本地 topic 状态，而非保存 transcript。
 8. 不得加入 `.env` 内容、token、凭证、私钥、客户导出或无关私人文件。
 
@@ -37,9 +37,9 @@
 
 `trusted-providers.local.json` 是第二份 ignored 本地文件：仅当 provider key 已获用户批准，且当前 profile 的非密钥指纹仍与记录一致时，runner 才会执行外发调用。endpoint、模型映射、配置目录或非密钥 environment 改变都会使批准失效，必须重新运行 `trust_provider.py --approve`。这是项目内可审计的信任门，不绕过 Codex 宿主平台的最终外发审批。
 
-不要切换 CC Switch 全局 provider。执行器使用 `.ai-collaboration/providers.local.json` 中该 provider 的隔离 `CLAUDE_CONFIG_DIR`。
+不要切换 CC Switch 全局 provider。provider 凭据默认保存在用户自行管理、被 Git 忽略的配置文件中。推荐使用无密钥的共享定义，叠加平台专属的 `.ai-collaboration/providers.local.macos.json` 与 `.ai-collaboration/providers.local.windows.json`；每份文件可保存该平台的 `auth_token`、launcher 和隔离 `CLAUDE_CONFIG_DIR`。是否由用户的私有同步机制同步这些文件完全由用户决定。不得要求用户使用 Keychain、Credential Manager 或环境变量，也绝不把凭据复制进 handoff、输出、日志或版本化文件。
 
-会话绑定主题、provider、model profile 和工作目录；仅用保存的 `session_id` 恢复，绝不使用 CLI `--continue`。provider、model profile、工作目录或持续主题发生变化时新建会话；分支方案使用独立 fork。
+会话绑定主题、provider、model profile、工作目录、workspace identity 和主机平台；仅用保存的 `session_id` 恢复，绝不使用 CLI `--continue`。provider、model profile、工作目录、workspace identity、主机平台或持续主题发生变化时新建会话；分支方案使用独立 fork。
 
 外部协作者只能修改允许路径，不能提交、推送、合并、部署、发布、改写 Git 历史、全局安装、访问密钥或运行未批准命令。脚本检测到的越界修改即使模型报告成功也不能视为成功。
 

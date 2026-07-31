@@ -7,10 +7,15 @@ import shutil
 import sys
 from pathlib import Path
 
+from platform_support import host_platform
+
 ROOT = Path(__file__).resolve().parents[4]
 CONTROL = ROOT / ".ai-collaboration"
 EXAMPLE = CONTROL / "providers.local.example.json"
 LOCAL = CONTROL / "providers.local.json"
+SHARED_EXAMPLE = CONTROL / "providers.shared.example.json"
+SHARED = CONTROL / "providers.shared.json"
+PLATFORM_EXAMPLE = CONTROL / f"providers.local.{host_platform()}.example.json"
 TRUST_EXAMPLE = CONTROL / "trusted-providers.local.example.json"
 TRUST_LOCAL = CONTROL / "trusted-providers.local.json"
 RUNTIME_DIRS = ("handoffs", "outputs", "logs", "snapshots", "archives", "reviews")
@@ -21,8 +26,18 @@ DURABLE_TEMPLATES = {
 }
 
 
+def protect_local_file(path: Path) -> str | None:
+    if host_platform() == "windows":
+        return "Windows could not verify or tighten ACLs automatically; keep this ignored file in a user-only directory."
+    try:
+        path.chmod(0o600)
+    except OSError as exc:
+        return f"Could not restrict local file permissions: {exc}"
+    return None
+
+
 def initialize() -> int:
-    if not EXAMPLE.is_file() or not TRUST_EXAMPLE.is_file():
+    if not EXAMPLE.is_file() or not SHARED_EXAMPLE.is_file() or not PLATFORM_EXAMPLE.is_file() or not TRUST_EXAMPLE.is_file():
         print("Missing one or more public local-configuration examples.", file=sys.stderr)
         return 2
     CONTROL.mkdir(exist_ok=True)
@@ -32,20 +47,29 @@ def initialize() -> int:
         path = CONTROL / name
         if not path.exists():
             path.write_text(content, encoding="utf-8")
+    if SHARED.exists():
+        print(f"Kept shared portable profile: {SHARED.relative_to(ROOT)}")
+    else:
+        shutil.copyfile(SHARED_EXAMPLE, SHARED)
+        print(f"Created shared portable profile from example: {SHARED.relative_to(ROOT)}")
     if LOCAL.exists():
         print(f"Kept existing local profile: {LOCAL.relative_to(ROOT)}")
     else:
         shutil.copyfile(EXAMPLE, LOCAL)
-        LOCAL.chmod(0o600)
+        warning = protect_local_file(LOCAL)
+        if warning:
+            print(f"Warning: {warning}", file=sys.stderr)
         print(f"Created local profile from example: {LOCAL.relative_to(ROOT)}")
     if TRUST_LOCAL.exists():
         print(f"Kept existing provider trust record: {TRUST_LOCAL.relative_to(ROOT)}")
     else:
         shutil.copyfile(TRUST_EXAMPLE, TRUST_LOCAL)
-        TRUST_LOCAL.chmod(0o600)
+        warning = protect_local_file(TRUST_LOCAL)
+        if warning:
+            print(f"Warning: {warning}", file=sys.stderr)
         print(f"Created empty provider trust record: {TRUST_LOCAL.relative_to(ROOT)}")
     print("Created missing minimal collaboration state without copying transcripts or provider output.")
-    print("Next: edit local profile values, create each configured CLAUDE_CONFIG_DIR, run doctor.py, then explicitly approve each intended provider with trust_provider.py.")
+    print(f"Next: copy/edit {PLATFORM_EXAMPLE.relative_to(ROOT)} as this host's Git-ignored platform profile, place direct auth_token values there, create each CLAUDE_CONFIG_DIR, run doctor.py, then explicitly approve each intended provider with trust_provider.py.")
     print("This script never reads, prints, or sends credential values.")
     return 0
 
@@ -53,13 +77,14 @@ def initialize() -> int:
 def check() -> int:
     missing = [name for name in RUNTIME_DIRS + DURABLE_DIRS if not (CONTROL / name).is_dir()]
     missing_templates = [name for name in DURABLE_TEMPLATES if not (CONTROL / name).is_file()]
-    print(f"public examples: {'ok' if EXAMPLE.is_file() and TRUST_EXAMPLE.is_file() else 'missing'}")
+    print(f"public examples: {'ok' if EXAMPLE.is_file() and SHARED_EXAMPLE.is_file() and PLATFORM_EXAMPLE.is_file() and TRUST_EXAMPLE.is_file() else 'missing'}")
+    print(f"shared portable profile: {'present' if SHARED.is_file() else 'missing'}")
     print(f"local profile: {'present' if LOCAL.is_file() else 'missing'}")
     print(f"provider trust record: {'present' if TRUST_LOCAL.is_file() else 'missing'}")
     print(f"runtime directories: {'ok' if not missing else 'missing ' + ', '.join(missing)}")
     print(f"minimal durable state: {'ok' if not missing_templates else 'missing ' + ', '.join(missing_templates)}")
     print("Credentials are intentionally not read or checked by bootstrap.")
-    return 0 if EXAMPLE.is_file() and TRUST_EXAMPLE.is_file() and LOCAL.is_file() and TRUST_LOCAL.is_file() and not missing and not missing_templates else 2
+    return 0 if EXAMPLE.is_file() and SHARED_EXAMPLE.is_file() and PLATFORM_EXAMPLE.is_file() and SHARED.is_file() and TRUST_EXAMPLE.is_file() and LOCAL.is_file() and TRUST_LOCAL.is_file() and not missing and not missing_templates else 2
 
 
 def main() -> int:

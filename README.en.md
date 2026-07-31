@@ -44,15 +44,23 @@ The project-local Skill includes these parts:
 Prerequisites: Python 3.10+ and a working local Claude Code CLI. Clone or fork the repository, then initialize only local runtime files:
 
 ```bash
+# macOS / Linux
 python3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
+
+# Windows PowerShell or Command Prompt
+py -3 .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
 ```
 
-This creates ignored runtime directories and copies the public example to `.ai-collaboration/providers.local.json` **only when that private file does not already exist**. It never reads, prints, or sends credentials.
+This creates runtime directories and ensures a sync-safe `.ai-collaboration/providers.shared.json` exists. The shared file contains only provider definitions without tokens, home-relative configuration directories, and logical launchers; it never reads, prints, or sends credentials.
 
-Edit the copied profile: replace placeholder endpoint/model values, choose your provider keys, set an isolated existing `CLAUDE_CONFIG_DIR` for each profile, and configure authentication locally. Then verify a configured provider without printing its secret:
+Edit the shared profile, then maintain `.ai-collaboration/providers.local.macos.json` and `.ai-collaboration/providers.local.windows.json` separately. Each platform file may directly contain that platform's `auth_token`, launcher, and isolated `CLAUDE_CONFIG_DIR`. These files are Git-ignored; your private synchronization mechanism decides whether to synchronize them. This project does not require environment variables, macOS Keychain, or Windows Credential Manager. Then verify a configured provider without printing its secret:
 
 ```bash
+# macOS / Linux
 python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
+
+# Windows PowerShell or Command Prompt
+py -3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
 ```
 
 Passing the diagnostic is not egress approval. After deciding that a provider may receive this project's minimal non-sensitive handoffs, record a local approval bound to its current non-secret profile fingerprint:
@@ -62,6 +70,8 @@ python3 .agents/skills/external-agent-collaboration/scripts/trust_provider.py --
 ```
 
 Changing endpoint, model mappings, configuration directory, or non-secret environment invalidates the approval and requires the user to run the command again. It neither reads nor prints credentials, and cannot bypass the host platform's final egress approval.
+
+Direct tokens in configuration files are the supported default. A legacy shared `providers.local.json` remains supported; when platform paths differ, place the relevant profiles in `providers.local.macos.json` or `providers.local.windows.json`. Do not run a tool that moves tokens into environment variables or OS credential stores unless the user explicitly changes this policy.
 
 Use `bootstrap.py --check` to verify only file and directory setup. It deliberately does not validate credential values.
 
@@ -89,7 +99,7 @@ Use `bootstrap.py --check` to verify only file and directory setup. It deliberat
 
 ## Configuration model
 
-Provider credentials belong in a local, Git-ignored configuration file. The exact format is intentionally kept outside this public README. The repository must not contain tokens, endpoint credentials, session transcripts, capability-lab artifacts, or generated private logs.
+Version-controlled shared profiles must not contain tokens, absolute user directories, platform-specific launcher paths, session transcripts, capability-lab artifacts, or generated private logs. Provider tokens may be stored directly in Git-ignored platform-local profiles; the user decides whether a private synchronization mechanism carries those files. In every case, tokens must not enter handoffs, outputs, logs, test fixtures, or external prompts.
 
 Each profile should supply only what the local CLI needs: an isolated configuration directory, launcher, CC Switch/Claude Code environment model mappings, non-secret environment settings, and local-only authentication. The runner deliberately does not pass `--model`, so it does not override provider-internal FABLE/OPUS/SONNET/HAIKU/SUBAGENT mappings or route Flash/Base/Pro across providers. Credentials are injected only into the child-process environment, never into a handoff or output record.
 

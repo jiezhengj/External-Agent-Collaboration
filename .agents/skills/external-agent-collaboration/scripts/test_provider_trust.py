@@ -26,11 +26,19 @@ def main() -> None:
     changed_environment_secret = {**profile, "environment": {**profile["environment"], "API_KEY": "changed"}}
     assert collaborate.profile_fingerprint(changed_secret) == fingerprint
     assert collaborate.profile_fingerprint(changed_environment_secret) == fingerprint
+    changed_authentication_method = {**profile, "auth_token": "", "auth_token_keychain_service": "provider-token"}
+    assert collaborate.profile_fingerprint(changed_authentication_method) != fingerprint
     trust = {"schema_version": 1, "providers": {"provider_a": {"approved": True, "profile_fingerprint": fingerprint}}}
     assert collaborate.provider_is_trusted("provider_a", profile, trust)
     changed_model = {**profile, "environment": {**profile["environment"], "ANTHROPIC_MODEL": "model-b"}}
     assert not collaborate.provider_is_trusted("provider_a", changed_model, trust)
     assert collaborate.trusted_profiles({"provider_a": profile, "provider_b": profile}, trust) == {"provider_a": profile}
+    original_host_platform = collaborate.host_platform
+    try:
+        collaborate.host_platform = lambda: "different-host"
+        assert collaborate.profile_fingerprint(profile) != fingerprint
+    finally:
+        collaborate.host_platform = original_host_platform
     with tempfile.TemporaryDirectory() as directory:
         original = collaborate.TRUST_FILE
         collaborate.TRUST_FILE = Path(directory) / "trusted-providers.local.json"

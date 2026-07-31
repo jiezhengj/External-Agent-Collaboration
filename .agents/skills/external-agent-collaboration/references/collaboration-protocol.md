@@ -11,13 +11,15 @@ Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务�
 
 在首次真实外发前，用户必须运行 `trust_provider.py --provider <key> --approve`。该命令在 ignored 的 `trusted-providers.local.json` 写入 provider key 与当前 profile 的非密钥 fingerprint；runner 只接受仍匹配的记录。profile 的 endpoint、模型映射、配置目录或非密钥环境变化时，记录自动失效。它用于区分“本机 Claude Code harness”与“已获用户批准的 provider egress”，但不能绕过 Codex 宿主平台的最终审批。
 
+Provider token 的默认载体是用户管理、Git 忽略的配置文件。可使用通用 `providers.local.json`，或为 macOS/Windows 分别使用 platform local profile；token 可直接写入对应文件。不得要求 Keychain、Credential Manager 或环境变量，也不得将 token 写入 Git、handoff、输出、日志或外部提示词。
+
 ## 能力探测
 
 将实际完成的新建文件操作作为能力证据，而不是依赖模型描述。探测使用 ephemeral session，在 `capability-lab/<provider>/<timestamp>/` 中运行，结果写入 `.ai-collaboration/provider-capabilities.json`。
 
-在以下时机探测：首次需要新建文件/目录的 execute；能力记录超过七天；Claude CLI 版本或非密钥 profile 指纹变化；或外部协作者报告缺少工具。不要在每次普通任务、只读任务或每次 session 恢复前探测。
+在以下时机探测：首次需要新建文件/目录的 execute；能力记录超过七天；Claude CLI 版本、非密钥 profile 指纹或主机平台变化；或外部协作者报告缺少工具。不要在每次普通任务、只读任务或每次 session 恢复前探测。
 
-能力档案是可自动更新的运行数据；不要让外部模型自动改写 `SKILL.md`、`AGENTS.md`、安全策略或 provider 配置。能力记录代表新建 ephemeral session；持续 session 还需检查 `sessions.json` 的 `initial_toolset`，因为恢复会话可能保留创建时的工具集合。
+能力档案是可自动更新的运行数据；不要让外部模型自动改写 `SKILL.md`、`AGENTS.md`、安全策略或 provider 配置。能力记录代表同一主机平台上的新建 ephemeral session；不同平台的记录一律失效。持续 session 还需检查 `sessions.json` 的 `initial_toolset`，因为恢复会话可能保留创建时的工具集合。只有档案明确记录 POSIX shell 时才允许 Bash 创建兜底；否则使用原生 Write、fork/new session 或停止。
 
 ## Handoff 必填内容
 

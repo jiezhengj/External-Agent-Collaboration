@@ -11,32 +11,29 @@ import subprocess
 import sys
 from pathlib import Path
 
+from platform_support import macos_keychain_supported, macos_keychain_unavailable_message
+from profile_support import ProfileConfigError, environment_token, load_profiles as load_profile_documents, profile_file_paths
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
-PROFILE_FILE = CONTROL_ROOT / "providers.local.json"
-
-
 def load_profiles() -> dict:
-    if not PROFILE_FILE.exists():
-        raise ValueError(
-            f"Missing {PROFILE_FILE.relative_to(PROJECT_ROOT)}. Copy providers.local.example.json "
-            "and configure profile paths without storing secret values in the project."
-        )
     try:
-        data = json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid profile JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ValueError("Profile file must be a JSON object keyed by provider.")
-    return data
+        return load_profiles_from_control()
+    except ProfileConfigError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def load_profiles_from_control() -> dict:
+    return load_profile_documents(CONTROL_ROOT)
 
 
 def check(provider: str) -> list[str]:
     profiles = load_profiles()
     profile = profiles.get(provider)
     if not isinstance(profile, dict):
-        return [f"Provider '{provider}' is not configured in {PROFILE_FILE.name}."]
+        shared, local = profile_file_paths(CONTROL_ROOT)
+        return [f"Provider '{provider}' is not configured in {shared.name} or {local.name}."]
 
     problems: list[str] = []
     launcher = str(profile.get("launcher", "claude"))
@@ -51,10 +48,20 @@ def check(provider: str) -> list[str]:
     service = profile.get("auth_token_keychain_service")
     if isinstance(direct_token, str) and direct_token:
         pass
+    elif isinstance(profile.get("auth_token_env"), str) and profile.get("auth_token_env"):
+        if not environment_token(profile):
+            problems.append(f"Missing authentication environment variable: {profile['auth_token_env']}")
     elif isinstance(service, str) and service:
-        result = subprocess.run(["security", "find-generic-password", "-s", service], capture_output=True, text=True)
-        if result.returncode != 0:
-            problems.append(f"Missing macOS Keychain password item: {service}")
+        if not macos_keychain_supported():
+            problems.append(macos_keychain_unavailable_message())
+        else:
+            try:
+                result = subprocess.run(["security", "find-generic-password", "-s", service], capture_output=True, text=True)
+            except OSError:
+                problems.append("macOS Keychain command is unavailable.")
+            else:
+                if result.returncode != 0:
+                    problems.append(f"Missing macOS Keychain password item: {service}")
     else:
         required = profile.get("required_environment", [])
         if not isinstance(required, list) or not all(isinstance(name, str) for name in required):
@@ -68,7 +75,7 @@ def check(provider: str) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True, help="Provider key from providers.local.json")
+    parser.add_argument("--provider", required=True, help="Provider key from providers.shared.json or providers.local.json")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:

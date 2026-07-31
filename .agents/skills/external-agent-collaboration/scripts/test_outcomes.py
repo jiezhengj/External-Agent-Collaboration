@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -45,10 +46,11 @@ def main() -> None:
         failures = collaborate.evaluate_outcomes([{"type": "file_exists", "path": f"{rel}/missing.md"}], changed, temporary, [])
         check(failures[0]["passed"] is False, "Missing file must fail.")
 
-        unapproved = collaborate.evaluate_outcomes([{"type": "command_succeeds", "command": "true"}], changed, temporary, [])
+        portable_argv = [sys.executable, "-c", "pass"]
+        unapproved = collaborate.evaluate_outcomes([{"type": "command_succeeds", "argv": portable_argv}], changed, temporary, [])
         check(unapproved[0]["passed"] is False and "error" in unapproved[0], "Unapproved validation command must fail.")
 
-        approved = collaborate.evaluate_outcomes([{"type": "command_succeeds", "command": "true"}], changed, temporary, ["true"])
+        approved = collaborate.evaluate_outcomes([{"type": "command_succeeds", "argv": portable_argv}], changed, temporary, [], [portable_argv])
         check(approved[0]["passed"] is True, f"Approved validation command must pass: {approved}")
 
         checkpoint = Path(tempfile.mkdtemp(prefix="outcomes-checkpoint-", dir=collaborate.PROJECT_ROOT))

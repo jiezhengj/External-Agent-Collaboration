@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "providers": {
+    "provider_a": {
+      "config_dir_relative_to_home": ".claude-provider-a",
+      "launcher": "claude",
+      "environment": {
+        "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
+        "ANTHROPIC_MODEL": "your-model-id"
+      }
+    },
+    "provider_b": {
+      "config_dir_relative_to_home": ".claude-provider-b",
+      "launcher": "claude",
+      "environment": {
+        "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
+        "ANTHROPIC_MODEL": "your-model-id"
+      }
+    }
+  }
+}

@@ -16,25 +16,35 @@ SPEC.loader.exec_module(bootstrap)
 
 
 def main() -> None:
-    original = bootstrap.ROOT, bootstrap.CONTROL, bootstrap.EXAMPLE, bootstrap.LOCAL, bootstrap.TRUST_EXAMPLE, bootstrap.TRUST_LOCAL
+    original = bootstrap.ROOT, bootstrap.CONTROL, bootstrap.EXAMPLE, bootstrap.LOCAL, bootstrap.SHARED_EXAMPLE, bootstrap.SHARED, bootstrap.PLATFORM_EXAMPLE, bootstrap.TRUST_EXAMPLE, bootstrap.TRUST_LOCAL
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         control = root / ".ai-collaboration"
         control.mkdir()
         example = control / "providers.local.example.json"
-        example.write_text('{"provider_a": {}}\n', encoding="utf-8")
+        example.write_text('{"schema_version": 1, "providers": {}}\n', encoding="utf-8")
+        shared_example = control / "providers.shared.example.json"
+        shared_example.write_text('{"schema_version": 1, "providers": {}}\n', encoding="utf-8")
+        platform_example = control / f"providers.local.{bootstrap.host_platform()}.example.json"
+        platform_example.write_text('{"schema_version": 1, "providers": {}}\n', encoding="utf-8")
         trust_example = control / "trusted-providers.local.example.json"
         trust_example.write_text('{"schema_version": 1, "providers": {}}\n', encoding="utf-8")
-        bootstrap.ROOT, bootstrap.CONTROL, bootstrap.EXAMPLE, bootstrap.LOCAL, bootstrap.TRUST_EXAMPLE, bootstrap.TRUST_LOCAL = root, control, example, control / "providers.local.json", trust_example, control / "trusted-providers.local.json"
+        bootstrap.ROOT, bootstrap.CONTROL, bootstrap.EXAMPLE, bootstrap.LOCAL, bootstrap.SHARED_EXAMPLE, bootstrap.SHARED, bootstrap.PLATFORM_EXAMPLE, bootstrap.TRUST_EXAMPLE, bootstrap.TRUST_LOCAL = root, control, example, control / "providers.local.json", shared_example, control / "providers.shared.json", platform_example, trust_example, control / "trusted-providers.local.json"
         try:
             assert bootstrap.initialize() == 0
             assert (control / "project-context.md").is_file()
             assert (control / "decisions.md").is_file()
             assert (control / "topics").is_dir()
+            assert (control / "providers.shared.json").is_file()
             assert (control / "trusted-providers.local.json").is_file()
             assert bootstrap.check() == 0
+            warning = bootstrap.protect_local_file(control / "providers.local.json")
+            if bootstrap.host_platform() == "windows":
+                assert warning and "ACL" in warning
+            else:
+                assert warning is None
         finally:
-            bootstrap.ROOT, bootstrap.CONTROL, bootstrap.EXAMPLE, bootstrap.LOCAL, bootstrap.TRUST_EXAMPLE, bootstrap.TRUST_LOCAL = original
+            bootstrap.ROOT, bootstrap.CONTROL, bootstrap.EXAMPLE, bootstrap.LOCAL, bootstrap.SHARED_EXAMPLE, bootstrap.SHARED, bootstrap.PLATFORM_EXAMPLE, bootstrap.TRUST_EXAMPLE, bootstrap.TRUST_LOCAL = original
     print("bootstrap tests passed")
 
 

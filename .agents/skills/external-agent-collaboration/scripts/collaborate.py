@@ -19,13 +19,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from platform_support import (
+    capability_matches_host,
+    host_platform,
+    macos_keychain_supported,
+    macos_keychain_unavailable_message,
+    session_matches_workspace,
+    supports_posix_shell_fallback,
+    workspace_identity,
+)
+from profile_support import ProfileConfigError, environment_token, load_profiles
 from provider_health import classify_failure, default_health, is_available, record_failure, record_success, status as provider_health_status, valid_health
 from provider_routing import append_event, choose_provider, valid_metrics
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
-PROFILE_FILE = CONTROL_ROOT / "providers.local.json"
 TRUST_FILE = CONTROL_ROOT / "trusted-providers.local.json"
 SESSIONS_FILE = CONTROL_ROOT / "sessions.json"
 METRICS_FILE = CONTROL_ROOT / "provider-metrics.json"
@@ -100,18 +109,16 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def profiles() -> dict[str, dict[str, Any]]:
-    data = load_json(PROFILE_FILE, None)
-    if not isinstance(data, dict):
-        raise CollaborationError(
-            "Provider profiles are missing. Copy .ai-collaboration/providers.local.example.json "
-            "to providers.local.json and configure isolated profiles."
-        )
-    return {key: value for key, value in data.items() if isinstance(value, dict)}
+    try:
+        return load_profiles(CONTROL_ROOT)
+    except ProfileConfigError as exc:
+        raise CollaborationError(str(exc)) from exc
 
 
 def profile_fingerprint(profile: dict[str, Any]) -> str:
     """Fingerprint non-secret profile configuration without persisting its values."""
-    safe = {key: value for key, value in profile.items() if key not in {"auth_token", "auth_token_keychain_service"}}
+    safe = {key: value for key, value in profile.items() if key != "auth_token"}
+    safe["runtime_platform"] = host_platform()
     environment = safe.get("environment")
     if isinstance(environment, dict):
         safe["environment"] = {
@@ -149,8 +156,16 @@ def profile_problem(profile: dict[str, Any]) -> str | None:
     service = profile.get("auth_token_keychain_service")
     if isinstance(direct_token, str) and direct_token:
         pass
+    elif isinstance(profile.get("auth_token_env"), str) and profile.get("auth_token_env"):
+        if not environment_token(profile):
+            return f"missing authentication environment variable: {profile['auth_token_env']}"
     elif isinstance(service, str) and service:
-        result = subprocess.run(["security", "find-generic-password", "-s", service], capture_output=True, text=True)
+        if not macos_keychain_supported():
+            return macos_keychain_unavailable_message()
+        try:
+            result = subprocess.run(["security", "find-generic-password", "-s", service], capture_output=True, text=True)
+        except OSError:
+            return "macOS Keychain command is unavailable"
         if result.returncode != 0:
             return f"missing macOS Keychain password item: {service}"
     else:
@@ -192,6 +207,7 @@ def registry() -> dict[str, Any]:
 
 
 def save_registry(data: dict[str, Any]) -> None:
+    data["schema_version"] = max(2, int(data.get("schema_version", 1)))
     write_json(SESSIONS_FILE, data)
 
 
@@ -203,12 +219,26 @@ def topics_registry() -> dict[str, Any]:
 
 
 def register_topic_session(data: dict[str, Any], session: dict[str, Any], parent_key: str | None = None) -> None:
-    matches = [item for item in data["topics"] if isinstance(item, dict) and item.get("topic") == session["topic"] and item.get("working_directory") == session["working_directory"]]
+    matches = [
+        item for item in data["topics"]
+        if isinstance(item, dict) and item.get("topic") == session["topic"]
+        and item.get("workspace_identity") == session.get("workspace_identity")
+        and item.get("host_platform") == session.get("host_platform")
+    ]
     item = matches[0] if len(matches) == 1 else None
     if item is None:
-        item = {"topic": session["topic"], "working_directory": session["working_directory"], "created_at": now(), "sessions": [], "artifact_paths": [], "status": "active"}
+        item = {
+            "topic": session["topic"], "working_directory": session["working_directory"],
+            "workspace_identity": session.get("workspace_identity"), "host_platform": session.get("host_platform"),
+            "created_at": now(), "sessions": [], "artifact_paths": [], "status": "active",
+        }
         data["topics"].append(item)
-    session_ref = {"key": session["key"], "provider": session["provider"], "model_profile": session["model_profile"], "session_id": session["session_id"], "parent_key": parent_key, "created_at": session["created_at"], "status": session["status"]}
+    session_ref = {
+        "key": session["key"], "provider": session["provider"], "model_profile": session["model_profile"],
+        "session_id": session["session_id"], "parent_key": parent_key, "created_at": session["created_at"],
+        "status": session["status"], "host_platform": session.get("host_platform"),
+        "workspace_identity": session.get("workspace_identity"),
+    }
     item["sessions"] = [reference for reference in item["sessions"] if reference.get("key") != session["key"]]
     item["sessions"].append(session_ref)
     item["status"] = "active"
@@ -240,7 +270,7 @@ def select_provider(requested: str, topic: str, workdir: Path, sessions: list[di
     matches = [
         item for item in sessions
         if item.get("status") == "active" and item.get("topic") == topic
-        and item.get("working_directory") == str(workdir)
+        and session_matches_workspace(item, workdir)
     ]
     if requested != "auto":
         matches = [item for item in matches if item.get("provider") == requested]
@@ -400,8 +430,18 @@ def provider_environment(profile: dict[str, Any]) -> dict[str, str]:
     service = profile.get("auth_token_keychain_service")
     if isinstance(direct_token, str) and direct_token:
         environment["ANTHROPIC_AUTH_TOKEN"] = direct_token
+    elif isinstance(profile.get("auth_token_env"), str) and profile.get("auth_token_env"):
+        token = environment_token(profile)
+        if not token:
+            raise CollaborationError(f"Missing authentication environment variable: {profile['auth_token_env']}")
+        environment["ANTHROPIC_AUTH_TOKEN"] = token
     elif isinstance(service, str) and service:
-        result = subprocess.run(["security", "find-generic-password", "-s", service, "-w"], capture_output=True, text=True)
+        if not macos_keychain_supported():
+            raise CollaborationError(macos_keychain_unavailable_message())
+        try:
+            result = subprocess.run(["security", "find-generic-password", "-s", service, "-w"], capture_output=True, text=True)
+        except OSError as exc:
+            raise CollaborationError("macOS Keychain command is unavailable") from exc
         if result.returncode != 0:
             raise CollaborationError(f"Missing macOS Keychain password item: {service}")
         token = result.stdout.rstrip("\r\n")
@@ -461,10 +501,14 @@ def ensure_creation_capability(provider: str) -> dict[str, Any]:
     record = records.get("providers", {}).get(provider) if isinstance(records, dict) else None
     if not isinstance(record, dict):
         raise CollaborationError(f"Capability probe produced no record for {provider}.")
+    if not capability_matches_host(record):
+        raise CollaborationError(f"Capability probe produced a record for a different host platform: {provider}.")
     return record
 
 
 def bash_create_commands(paths: list[Path]) -> list[str]:
+    if not supports_posix_shell_fallback():
+        raise CollaborationError("Bash creation fallback is unavailable on this host; fork or create a session with native Write.")
     commands: list[str] = []
     for path in paths:
         parent = path.parent.relative_to(PROJECT_ROOT)
@@ -605,7 +649,7 @@ def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | No
 def compact_outcomes(outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     compact: list[dict[str, Any]] = []
     for item in outcomes[:20]:
-        record = {key: item[key] for key in ("type", "path", "command", "passed", "count") if key in item}
+        record = {key: item[key] for key in ("type", "path", "command", "argv", "passed", "count") if key in item}
         if isinstance(item.get("error"), str):
             record["error"] = one_line(item["error"], 240)
         compact.append(record)
@@ -674,7 +718,8 @@ def write_topic_state(topic: str, workdir: Path, goal: str | None, stop_rule: st
     return str(path.relative_to(PROJECT_ROOT))
 
 
-def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdir: Path, validation_commands: list[str]) -> list[dict[str, Any]]:
+def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdir: Path, validation_commands: list[str], validation_argvs: list[list[str]] | None = None) -> list[dict[str, Any]]:
+    validation_argvs = validation_argvs or []
     results: list[dict[str, Any]] = []
     for item in outcomes:
         kind = item["type"]
@@ -712,11 +757,18 @@ def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdi
                 passed = len(changed) >= minimum and (maximum is None or len(changed) <= maximum)
                 result.update({"count": len(changed), "passed": passed})
             elif kind == "command_succeeds":
-                command = item.get("command")
-                if not isinstance(command, str) or command not in validation_commands:
-                    raise CollaborationError("command_succeeds must exactly match one --validation-command.")
-                completed = subprocess.run(command, cwd=workdir, shell=True, capture_output=True, text=True, timeout=180)
-                result.update({"command": command, "exit_code": completed.returncode, "passed": completed.returncode == 0, "stderr": completed.stderr[-2000:]})
+                argv = item.get("argv")
+                if isinstance(argv, list):
+                    if not argv or not all(isinstance(value, str) and value for value in argv) or argv not in validation_argvs:
+                        raise CollaborationError("command_succeeds argv must exactly match one --validation-argv JSON array.")
+                    completed = subprocess.run(argv, cwd=workdir, shell=False, capture_output=True, text=True, timeout=180)
+                    result.update({"argv": argv, "exit_code": completed.returncode, "passed": completed.returncode == 0, "stderr": completed.stderr[-2000:]})
+                else:
+                    command = item.get("command")
+                    if not isinstance(command, str) or command not in validation_commands:
+                        raise CollaborationError("command_succeeds must exactly match one --validation-command or --validation-argv.")
+                    completed = subprocess.run(command, cwd=workdir, shell=True, capture_output=True, text=True, timeout=180)
+                    result.update({"command": command, "exit_code": completed.returncode, "passed": completed.returncode == 0, "stderr": completed.stderr[-2000:]})
             else:
                 raise CollaborationError(f"Unsupported expected outcome type: {kind}")
         except (CollaborationError, OSError, UnicodeDecodeError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
@@ -741,6 +793,7 @@ def main() -> int:
     parser.add_argument("--allow-command", action="append", default=[])
     parser.add_argument("--expected-outcomes")
     parser.add_argument("--validation-command", action="append", default=[])
+    parser.add_argument("--validation-argv", action="append", default=[], help="JSON array for a shell-free validation command.")
     parser.add_argument("--task-type", choices=("code", "document", "research", "creative", "planning", "data", "file_operations", "personal_advice", "current_information"))
     parser.add_argument("--mode", choices=("analyze", "draft", "critique", "revise", "execute", "verify"))
     parser.add_argument("--timeout", type=int, default=1200)
@@ -773,12 +826,21 @@ def main() -> int:
         binary_paths = [normalize_allow_path(value) for value in args.allow_binary_path]
         if any(not allowed(path, allow_paths) for path in delete_paths + binary_paths):
             raise CollaborationError("Delete/binary paths must be inside an --allow-path.")
-        if args.action != "execute" and (allow_paths or delete_paths or binary_paths or args.allow_command or args.expected_outcomes or args.validation_command):
+        if args.action != "execute" and (allow_paths or delete_paths or binary_paths or args.allow_command or args.expected_outcomes or args.validation_command or args.validation_argv):
             raise CollaborationError("Execution paths, commands, and outcomes are only valid for execute.")
         if any("\n" in command or command.strip() in {"", "*"} for command in args.allow_command):
             raise CollaborationError("Each allowed command must be a non-empty single-line pattern.")
         if any("\n" in command or command.strip() == "" for command in args.validation_command):
             raise CollaborationError("Each validation command must be a non-empty single line.")
+        validation_argvs: list[list[str]] = []
+        for value in args.validation_argv:
+            try:
+                argv = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise CollaborationError(f"--validation-argv must be a JSON array: {exc.msg}") from exc
+            if not isinstance(argv, list) or not argv or not all(isinstance(item, str) and item for item in argv):
+                raise CollaborationError("Each --validation-argv must be a non-empty JSON string array.")
+            validation_argvs.append(argv)
         outcomes = load_outcomes(Path(args.expected_outcomes).resolve()) if args.action == "execute" else []
         new_files = required_new_files(outcomes) if args.action == "execute" else []
         configured = profiles()
@@ -797,8 +859,8 @@ def main() -> int:
             provider = str(session["provider"])
             if args.provider != "auto" and args.provider != provider:
                 raise CollaborationError("--provider conflicts with --session-key.")
-            if session.get("working_directory") != str(workdir):
-                raise CollaborationError("Session working directory differs from this invocation.")
+            if not session_matches_workspace(session, workdir):
+                raise CollaborationError("Session belongs to a different platform or workspace; create a new session instead of resuming it.")
             auto_selected = False
             route = {"basis": "explicit_session_key"}
         else:
@@ -832,7 +894,7 @@ def main() -> int:
                 if capability.get("native_write") and session and not args.ephemeral:
                     effective_fork = True
                     log["automatic_fork_reason"] = "resumed_session_lacks_Write"
-                elif capability.get("bash_create_fallback"):
+                elif capability.get("bash_create_fallback") and capability.get("shell_kind") == "posix":
                     commands.extend(command for command in bash_create_commands(new_files) if command not in commands)
                     log["creation_fallback"] = "exact_bash_create"
                 else:
@@ -888,7 +950,7 @@ def main() -> int:
             violations = [path for path in changed if is_sensitive(Path(path)) or not allowed(Path(path), allow_paths)]
             violations.extend(path for path in deleted if not allowed(Path(path), delete_paths))
             violations.extend(path for path in binary if not allowed(Path(path), binary_paths))
-            outcome_results = evaluate_outcomes(outcomes, changed, workdir, args.validation_command)
+            outcome_results = evaluate_outcomes(outcomes, changed, workdir, args.validation_command, validation_argvs)
             after_validation = manifest(PROJECT_ROOT)
             changed = sorted(path for path in set(before) | set(after_validation) if before.get(path) != after_validation.get(path))
             deleted = [path for path in changed if path in before and path not in after_validation]
@@ -930,7 +992,13 @@ def main() -> int:
         if not args.ephemeral and isinstance(result.get("session_id"), str):
             parent_key = session.get("key") if effective_fork and session else None
             if session is None or effective_fork:
-                session = {"key": f"{args.topic}-{provider}-{uuid.uuid4().hex[:6]}", "topic": args.topic, "provider": provider, "model_profile": provider, "working_directory": str(workdir), "session_id": result["session_id"], "initial_toolset": initial_toolset(args.action, commands), "status": "active", "parent_key": parent_key, "created_at": now()}
+                session = {
+                    "key": f"{args.topic}-{provider}-{uuid.uuid4().hex[:6]}", "topic": args.topic,
+                    "provider": provider, "model_profile": provider, "working_directory": str(workdir),
+                    "workspace_identity": workspace_identity(workdir), "host_platform": host_platform(),
+                    "session_id": result["session_id"], "initial_toolset": initial_toolset(args.action, commands),
+                    "status": "active", "parent_key": parent_key, "created_at": now(),
+                }
                 data["sessions"].append(session)
             session["last_used_at"] = now()
             save_registry(data)

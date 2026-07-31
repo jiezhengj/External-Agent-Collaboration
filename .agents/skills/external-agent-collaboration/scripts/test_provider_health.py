@@ -6,6 +6,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
+import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -25,7 +27,7 @@ COLLABORATE_SPEC.loader.exec_module(collaborate)
 
 def main() -> None:
     data = health.default_health()
-    at = datetime(2026, 7, 29, tzinfo=timezone.utc)
+    at = datetime.now(timezone.utc)
     record = health.record_failure(data, "deepseek", "billing", at)
     assert record["failure_kind"] == "billing" and not health.is_available(data, "deepseek", at)
     assert health.is_available(data, "deepseek", at + timedelta(hours=24, seconds=1))
@@ -38,21 +40,29 @@ def main() -> None:
     assert retry["failure_count"] == 1
     assert health.classify_failure(1, "HTTP 401 invalid API key") == "authentication"
     assert health.classify_failure(1, "validation failed for expected outcome") is None
-    available = {
-        "deepseek": {"config_dir": "/"},
-        "mimo": {"config_dir": "/"},
-    }
-    sessions = [{"status": "active", "topic": "topic", "working_directory": "/project", "provider": "deepseek", "key": "old"}]
-    health.record_failure(data, "deepseek", "billing", at)
-    provider, session, auto, route = collaborate.select_provider("auto", "topic", Path("/project"), sessions, available, {"round_robin_cursor": {}, "events": []}, data, "code", "execute")
-    assert provider == "mimo" and session is None and auto and route["basis"] == "active_session_availability_failover"
-    selected, _, auto, route = collaborate.select_provider("auto", "fresh", Path("/project"), [], available, {"round_robin_cursor": {}, "events": []}, data, "research", "analyze")
-    assert selected == "mimo" and auto and route["basis"] == "starter_policy_text_reasoning_rotation"
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
+        available = {
+            "deepseek": {"config_dir": str(root)},
+            "mimo": {"config_dir": str(root)},
+        }
+        workdir = root / "project"
+        workdir.mkdir()
+        sessions = [{
+            "status": "active", "topic": "topic", "working_directory": str(workdir.resolve()),
+            "workspace_identity": collaborate.workspace_identity(workdir), "host_platform": collaborate.host_platform(),
+            "provider": "deepseek", "key": "old",
+        }]
+        health.record_success(data, "mimo", at)
+        health.record_failure(data, "deepseek", "billing", at)
+        provider, session, auto, route = collaborate.select_provider("auto", "topic", workdir, sessions, available, {"round_robin_cursor": {}, "events": []}, data, "code", "execute")
+        assert provider == "mimo" and session is None and auto and route["basis"] == "active_session_availability_failover"
+        selected, _, auto, route = collaborate.select_provider("auto", "fresh", workdir, [], available, {"round_robin_cursor": {}, "events": []}, data, "research", "analyze")
+        assert selected == "mimo" and auto and route["basis"] == "starter_policy_text_reasoning_rotation"
         launcher = root / "fake-claude"
         argv_path = root / "argv.json"
-        launcher.write_text(
+        helper = root / "fake-claude.py"
+        helper.write_text(
             "#!/usr/bin/env python3\n"
             "import json, os, sys\n"
             "from pathlib import Path\n"
@@ -60,7 +70,12 @@ def main() -> None:
             "print('{}')\n",
             encoding="utf-8",
         )
-        launcher.chmod(0o700)
+        if os.name == "nt":
+            launcher = root / "fake-claude.cmd"
+            launcher.write_text(f'@echo off\r\n"{sys.executable}" "%~dp0fake-claude.py" %*\r\n', encoding="utf-8")
+        else:
+            launcher.write_text(helper.read_text(encoding="utf-8"), encoding="utf-8")
+            launcher.chmod(0o700)
         code, _stdout, _stderr = collaborate.invoke(
             {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path), "ANTHROPIC_MODEL": "provider-default"}},
             "consult", "test", root, None, True, False, [], 10,
