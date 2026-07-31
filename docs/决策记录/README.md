@@ -10,3 +10,4 @@
 
 - [DEC-20260729-provider-routing-failover](DEC-20260729-provider-routing-failover.md)：公平 provider 轮换、可用性熔断，以及 CC Switch 内部模型职责。
 - [DEC-20260730-provider-token-config-files](DEC-20260730-provider-token-config-files.md)：配置文件直接 token、平台 local profile 与系统凭据库非默认原则。
+- [DEC-20260731-headless-multiharness](DEC-20260731-headless-multiharness.md)：Claude Code 优化、Antigravity 独立 harness、能力驱动分类与双平台门槛。

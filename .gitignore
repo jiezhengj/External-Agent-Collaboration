@@ -13,3 +13,5 @@ history/
 !.ai-collaboration/providers.local.windows.example.json
 !.ai-collaboration/providers.local.macos.example.json
 !.ai-collaboration/trusted-providers.local.example.json
+!.ai-collaboration/harness-profiles.local.example.json
+!.ai-collaboration/trusted-harnesses.local.example.json

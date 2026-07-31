@@ -8,6 +8,8 @@ import json
 import re
 from pathlib import Path
 
+from sensitivity import classify_sensitive_text
+
 
 TASK_TYPES = ("code", "document", "research", "creative", "planning", "data", "file_operations", "personal_advice", "current_information")
 MODES = ("analyze", "draft", "critique", "revise", "execute", "verify")
@@ -28,7 +30,7 @@ def classify(text: str) -> dict[str, str | float | bool]:
     if not normalized:
         raise ValueError("Request text is empty.")
 
-    sensitive = contains(normalized, ("api key", "token", "password", "密码", "密钥", ".env", "私钥", "客户数据", "生产数据"))
+    sensitive = classify_sensitive_text(normalized)
     current = contains(normalized, ("今天", "最新", "实时", "新闻", "天气", "股价", "汇率", "latest", "today", "weather", "price"))
     connector = contains(normalized, ("gmail", "邮箱", "日历", "calendar", "slack", "notion", "drive"))
     artifact = contains(normalized, ("图片", "image", "ppt", "pptx", "幻灯片", "slides", "xlsx", "excel", "word", ".docx", "pdf"))
@@ -42,8 +44,10 @@ def classify(text: str) -> dict[str, str | float | bool]:
     critique = contains(normalized, ("审查", "评审", "批评", "review", "critique", "检查"))
     verify = contains(normalized, ("验证", "核实", "verify", "validate", "测试是否"))
 
-    if sensitive:
-        return {"task_type": "file_operations", "mode": "analyze", "risk": "prohibited", "context_size": "small", "tool_requirement": "none", "delegation": "direct", "reason": "Request appears to contain or request sensitive content.", "confidence": 0.95}
+    if sensitive.state == "prohibited":
+        return {"task_type": "file_operations", "mode": "analyze", "risk": "prohibited", "context_size": "small", "tool_requirement": "none", "delegation": "direct", "reason": "Request contains credential material, an environment-file body, or explicit customer/production-data egress.", "confidence": 0.95}
+    if sensitive.state == "requires_redaction":
+        return {"task_type": "file_operations", "mode": "analyze", "risk": "requires_redaction", "context_size": "small", "tool_requirement": "none", "delegation": "direct", "reason": "Request references possible sensitive material; redact or replace it before external delegation.", "confidence": 0.8}
     if current or connector:
         return {"task_type": "current_information" if current else "research", "mode": "analyze", "risk": "medium", "context_size": "small", "tool_requirement": "native_codex", "delegation": "native_codex", "reason": "Request depends on timely or connected-account data.", "confidence": 0.9}
     if artifact:

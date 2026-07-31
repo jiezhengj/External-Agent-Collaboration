@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from claude_code_adapter import ClaudeCodeAdapter, ClaudeCodeAdapterError, ClaudeInvocation
+from harness_state import CLAUDE_CODE, RUNTIME_SCHEMA_VERSION, claude_session_record, external_session_id, session_harness, state_feature_enabled
 from platform_support import (
     capability_matches_host,
     host_platform,
@@ -31,6 +33,7 @@ from platform_support import (
 from profile_support import ProfileConfigError, environment_token, load_profiles
 from provider_health import classify_failure, default_health, is_available, record_failure, record_success, status as provider_health_status, valid_health
 from provider_routing import append_event, choose_provider, valid_metrics
+from sensitivity import classify_sensitive_text
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -67,6 +70,7 @@ RESPONSE_CONTRACT_SCHEMA: dict[str, Any] = {
     },
     "additionalProperties": False,
 }
+CLAUDE_ADAPTER = ClaudeCodeAdapter()
 
 
 class CollaborationError(RuntimeError):
@@ -90,6 +94,20 @@ def is_sensitive(rel: Path) -> bool:
 
 def is_controlled(rel: Path) -> bool:
     return bool(rel.parts) and rel.parts[0] in CONTROL_PARTS
+
+
+def validate_handoff_sensitivity(handoff: str) -> None:
+    """Enforce a final value-aware egress scan after task classification.
+
+    Classification decides whether a task is worth delegating. This separate
+    check protects the concrete handoff that would be sent to the local CLI and
+    intentionally reports only categories, never a matched value.
+    """
+    finding = classify_sensitive_text(handoff)
+    if finding.state == "prohibited":
+        raise CollaborationError("Handoff contains prohibited sensitive material (" + ", ".join(finding.categories) + ").")
+    if finding.state == "requires_redaction":
+        raise CollaborationError("Handoff may reference sensitive material and requires redaction before external collaboration.")
 
 
 def load_json(path: Path, default: Any) -> Any:
@@ -141,6 +159,7 @@ def provider_is_trusted(provider: str, profile: dict[str, Any], trust: dict[str,
     record = trust.get("providers", {}).get(provider)
     return (
         isinstance(record, dict)
+        and record.get("harness", CLAUDE_CODE) == CLAUDE_CODE
         and record.get("approved") is True
         and isinstance(record.get("profile_fingerprint"), str)
         and hmac.compare_digest(record["profile_fingerprint"], profile_fingerprint(profile))
@@ -207,7 +226,7 @@ def registry() -> dict[str, Any]:
 
 
 def save_registry(data: dict[str, Any]) -> None:
-    data["schema_version"] = max(2, int(data.get("schema_version", 1)))
+    data["schema_version"] = max(RUNTIME_SCHEMA_VERSION, int(data.get("schema_version", 1)))
     write_json(SESSIONS_FILE, data)
 
 
@@ -235,7 +254,9 @@ def register_topic_session(data: dict[str, Any], session: dict[str, Any], parent
         data["topics"].append(item)
     session_ref = {
         "key": session["key"], "provider": session["provider"], "model_profile": session["model_profile"],
-        "session_id": session["session_id"], "parent_key": parent_key, "created_at": session["created_at"],
+        "harness": session_harness(session), "harness_profile": session.get("harness_profile"),
+        "session_id": session["session_id"], "external_session_id": external_session_id(session),
+        "parent_key": parent_key, "created_at": session["created_at"],
         "status": session["status"], "host_platform": session.get("host_platform"),
         "workspace_identity": session.get("workspace_identity"),
     }
@@ -267,11 +288,15 @@ def allowed(rel: Path, paths: list[Path]) -> bool:
 
 
 def select_provider(requested: str, topic: str, workdir: Path, sessions: list[dict[str, Any]], available: dict[str, dict[str, Any]], metrics: dict[str, Any], health: dict[str, Any], task_type: str, mode: str) -> tuple[str, dict[str, Any] | None, bool, dict[str, Any]]:
-    matches = [
+    topic_matches = [
         item for item in sessions
         if item.get("status") == "active" and item.get("topic") == topic
         and session_matches_workspace(item, workdir)
     ]
+    foreign = [item for item in topic_matches if session_harness(item) != CLAUDE_CODE]
+    matches = [item for item in topic_matches if session_harness(item) == CLAUDE_CODE]
+    if foreign and not matches and state_feature_enabled():
+        raise CollaborationError("Matching active session belongs to a different harness; select it through its own harness router instead of creating a Claude Code continuation.")
     if requested != "auto":
         matches = [item for item in matches if item.get("provider") == requested]
         if len(matches) > 1:
@@ -299,6 +324,8 @@ def find_session(key: str, sessions: list[dict[str, Any]]) -> dict[str, Any]:
     matches = [item for item in sessions if item.get("key") == key and item.get("status") == "active"]
     if len(matches) != 1:
         raise CollaborationError(f"No unique active session with key '{key}'.")
+    if session_harness(matches[0]) != CLAUDE_CODE:
+        raise CollaborationError("Session belongs to a different harness and cannot be resumed by Claude Code.")
     return matches[0]
 
 
@@ -359,7 +386,7 @@ def output_path(run_id: str, suffix: str) -> Path:
 
 def response_contract_instruction(return_mode: str) -> str:
     if return_mode == "debug":
-        return "Return a concise final response; the caller is in explicit debug mode."
+        return "The caller is in explicit debug mode and retains the outer CLI envelope, but your response must still satisfy this schema: " + response_contract_instruction("compact")
     return """Return exactly one JSON object and no Markdown fence. Its required keys are:
 summary (string, at most 4096 characters), changed_files (array of at most 40 short paths),
 commands_run (array of at most 20 short commands), validation_results (array of at most 20 short results),
@@ -386,36 +413,24 @@ Handoff:
 
 
 def initial_toolset(action: str, commands: list[str]) -> list[str]:
-    tools = ["Read", "Glob", "Grep"]
-    if action == "execute":
-        tools.extend(["Edit", "Write"])
-        if commands:
-            tools.append("Bash")
-    return tools
+    return CLAUDE_ADAPTER.capabilities(action, commands)
 
 
-def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, session: dict[str, Any] | None, ephemeral: bool, fork_session: bool, commands: list[str], timeout: int) -> tuple[int, str, str]:
+def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, session: dict[str, Any] | None, ephemeral: bool, fork_session: bool, commands: list[str], timeout: int, stream_diagnostics: bool = False) -> tuple[int, str, str]:
     launcher = str(profile.get("launcher", "claude"))
-    command = [launcher, "-p", prompt, "--output-format", "json", "--permission-mode", "dontAsk"]
     tools = initial_toolset(action, commands)
     allowed_tools = tools.copy()
     if action == "execute":
         if commands:
             allowed_tools.extend(f"Bash({item})" for item in commands)
-    command.extend(["--tools", ",".join(tools), "--allowed-tools", ",".join(allowed_tools)])
-    if session and not ephemeral:
-        command.extend(["--resume", str(session["session_id"])])
-        if fork_session:
-            command.append("--fork-session")
-    if ephemeral:
-        command.append("--no-session-persistence")
-    environment = provider_environment(profile)
-    environment["CLAUDE_CONFIG_DIR"] = str(profile["config_dir"])
-    try:
-        completed = subprocess.run(command, cwd=workdir, env=environment, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        return 124, exc.stdout or "", f"Timed out after {timeout}s"
-    return completed.returncode, completed.stdout, completed.stderr
+    return CLAUDE_ADAPTER.invoke(ClaudeInvocation(
+        launcher=launcher, prompt=prompt, workdir=workdir, config_dir=str(profile["config_dir"]),
+        environment=provider_environment(profile), tools=tools, allowed_tools=allowed_tools, disallowed_tools=[], timeout=timeout,
+        session_id=CLAUDE_ADAPTER.resume_id(session) if session and not ephemeral else None,
+        ephemeral=ephemeral, fork_session=fork_session,
+        response_schema=RESPONSE_CONTRACT_SCHEMA,
+        stream_diagnostics=stream_diagnostics,
+    ))
 
 
 def provider_environment(profile: dict[str, Any]) -> dict[str, str]:
@@ -451,14 +466,13 @@ def provider_environment(profile: dict[str, Any]) -> dict[str, str]:
     return environment
 
 
-def parse_result(stdout: str) -> dict[str, Any]:
+def parse_result(stdout: str, stream_diagnostics: bool = False) -> dict[str, Any]:
     try:
-        data = json.loads(stdout)
-    except json.JSONDecodeError as exc:
-        raise CollaborationError(f"Claude CLI did not return valid JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise CollaborationError("Claude CLI JSON result must be an object.")
-    return data
+        if stream_diagnostics:
+            return CLAUDE_ADAPTER.parse_stream_result(stdout)[0]
+        return CLAUDE_ADAPTER.parse_outer_result(stdout)
+    except ClaudeCodeAdapterError as exc:
+        raise CollaborationError(str(exc)) from exc
 
 
 def outcome_path(value: str) -> Path:
@@ -630,16 +644,21 @@ def has_permission_denial(result: dict[str, Any]) -> bool:
 
 
 def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
-    raw = result.get("result")
-    if not isinstance(raw, str):
-        return None, ["result is not a JSON string"]
-    candidate = raw.strip()
-    if candidate.startswith("```json") and candidate.endswith("```"):
-        candidate = candidate[7:-3].strip()
     try:
-        value = json.loads(candidate)
-    except json.JSONDecodeError as exc:
-        return None, [f"result is not valid JSON: {exc.msg}"]
+        value, source = CLAUDE_ADAPTER.structured_output(result)
+    except ClaudeCodeAdapterError as exc:
+        return None, [str(exc)]
+    if source is None:
+        raw = result.get("result")
+        if not isinstance(raw, str):
+            return None, ["result is not a JSON string and structured_output is absent"]
+        candidate = raw.strip()
+        if candidate.startswith("```json") and candidate.endswith("```"):
+            candidate = candidate[7:-3].strip()
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            return None, [f"result is not valid JSON: {exc.msg}"]
     errors = schema_errors(value, RESPONSE_CONTRACT_SCHEMA)
     if errors:
         return None, errors[:12]
@@ -799,6 +818,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--ephemeral", action="store_true")
     parser.add_argument("--return-mode", choices=RETURN_MODES, default="compact", help="stdout shape; full CLI JSON always remains in local outputs.")
+    parser.add_argument("--stream-diagnostics", action="store_true", help="Opt in to content-free stream-json lifecycle diagnostics; final result handling remains structured.")
     parser.add_argument("--topic-goal", help="Short durable goal for the one-page topic state; never include secrets or a full handoff.")
     parser.add_argument("--stop-rule", help="Short durable stop rule for the one-page topic state.")
     args = parser.parse_args()
@@ -807,7 +827,7 @@ def main() -> int:
     action_modes = {"consult": "analyze", "continue": "analyze", "draft": "draft", "critique": "critique", "execute": "execute"}
     task_type = args.task_type or "planning"
     mode = args.mode or action_modes[args.action]
-    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode}
+    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode, "harness_state_feature": state_feature_enabled()}
     try:
         if args.timeout < 1:
             raise CollaborationError("--timeout must be positive.")
@@ -817,6 +837,7 @@ def main() -> int:
         if is_sensitive(handoff_rel) or not handoff_file.is_file():
             raise CollaborationError("Handoff must be a readable, non-sensitive project file.")
         handoff = handoff_file.read_text(encoding="utf-8")
+        validate_handoff_sensitivity(handoff)
         allow_paths = [normalize_allow_path(value) for value in args.allow_path]
         if args.action == "execute" and not allow_paths:
             raise CollaborationError("execute requires at least one --allow-path.")
@@ -906,7 +927,7 @@ def main() -> int:
             checkpoint = copy_checkpoint(run_id)
             before = manifest(PROJECT_ROOT)
         prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode)
-        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout)
+        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout, args.stream_diagnostics)
         log.update({"exit_code": exit_code, "stderr": one_line(stderr, 1200)})
 
         if exit_code != 0:
@@ -925,7 +946,7 @@ def main() -> int:
             failed_provider = provider
             provider, profile, route = fallback
             session = None
-            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, args.timeout)
+            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, args.timeout, args.stream_diagnostics)
             log.update({"provider_failover": {"from": failed_provider, "to": provider, "failure_kind": failure_kind}, "exit_code": exit_code, "stderr": one_line(stderr, 1200)})
             if exit_code != 0:
                 fallback_kind = classify_failure(exit_code, stderr)
@@ -937,7 +958,13 @@ def main() -> int:
                 raise CollaborationError(f"Fallback Claude CLI failed with exit code {exit_code}: {one_line(stderr, 800)}")
         record_success(health, provider)
         save_health(health)
-        result = parse_result(stdout)
+        result = parse_result(stdout, args.stream_diagnostics)
+        stream_summary: dict[str, Any] | None = None
+        if args.stream_diagnostics:
+            try:
+                _terminal, stream_summary = CLAUDE_ADAPTER.parse_stream_result(stdout)
+            except ClaudeCodeAdapterError as exc:
+                raise CollaborationError(str(exc)) from exc
         permission_denied = has_permission_denial(result)
         changed: list[str] = []
         violations: list[str] = []
@@ -975,9 +1002,12 @@ def main() -> int:
         else:
             status = "completed"
         log.update({"status": status, "permission_denied": permission_denied, "changed_files": changed, "deleted_files": deleted if checkpoint else [], "binary_files": binary if checkpoint else [], "restored_violations": violations, "outcome_results": outcome_results, "provider_health_after": provider_health_status(health, provider)})
+        if stream_summary is not None:
+            log["stream_diagnostics"] = stream_summary
         duration_seconds = round(time.monotonic() - started_monotonic, 3)
         append_event(metrics, {
             "run_id": run_id, "timestamp": now(), "provider": provider, "model_profile": provider,
+            "harness": CLAUDE_CODE, "harness_profile": provider,
             "task_type": task_type, "mode": mode, "status": status, "duration_seconds": duration_seconds,
             "tool_refusal": bool(result.get("permission_denials")) or (exit_code == 0 and "not available" in str(result).lower()),
             "cost_usd": result.get("total_cost_usd") if isinstance(result.get("total_cost_usd"), (int, float)) else None,
@@ -988,6 +1018,8 @@ def main() -> int:
         output_file = output_path(run_id, "outputs")
         output_rel = str(output_file.relative_to(PROJECT_ROOT))
         result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"valid": response is not None, "errors": contract_errors}}
+        if stream_summary is not None:
+            result_record["stream_diagnostics"] = stream_summary
         write_json(output_file, result_record)
         if not args.ephemeral and isinstance(result.get("session_id"), str):
             parent_key = session.get("key") if effective_fork and session else None
@@ -998,6 +1030,7 @@ def main() -> int:
                     "workspace_identity": workspace_identity(workdir), "host_platform": host_platform(),
                     "session_id": result["session_id"], "initial_toolset": initial_toolset(args.action, commands),
                     "status": "active", "parent_key": parent_key, "created_at": now(),
+                    **claude_session_record(provider, host_platform(), result["session_id"]),
                 }
                 data["sessions"].append(session)
             session["last_used_at"] = now()

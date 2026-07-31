@@ -80,7 +80,8 @@ def main() -> None:
             {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path), "ANTHROPIC_MODEL": "provider-default"}},
             "consult", "test", root, None, True, False, [], 10,
         )
-        assert code == 0 and "--model" not in json.loads(argv_path.read_text(encoding="utf-8"))
+        argv = json.loads(argv_path.read_text(encoding="utf-8"))
+        assert code == 0 and "--model" not in argv and "--json-schema" in argv
     print("provider-health tests passed")
 
 

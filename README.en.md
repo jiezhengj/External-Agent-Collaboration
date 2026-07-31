@@ -4,7 +4,7 @@
 
 ## Purpose
 
-This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex through the local Claude Code CLI. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
+This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex through a local headless CLI harness. Claude Code is the implemented project-collaborator harness today; Antigravity has a separately gated, explicit read-only adapter that is not yet auto-routed. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
 
 The project exists because a simple one-off model call is not enough for longer local work. A useful collaboration setup needs to keep providers and sessions separate, retain project context, constrain file edits, and verify what actually changed.
 
@@ -23,6 +23,7 @@ The workflow is designed to provide the following behavior.
 7. **Capability-aware file creation.** A fresh session's ability to use `Write` is measured separately from an older resumed session's initial tool set. When a resumed session lacks a needed tool, the preferred resolution is a tracked fork; an exact shell fallback is a last resort.
 8. **One-pass independent review.** A high-risk execution may receive one read-only critique from the other provider. The reviewer does not automatically re-invoke the executor, so there is no debate loop.
 9. **Durable local state.** Project context, decisions, handoffs, outputs, session records, capability records, routing metrics, and archives live in a local collaboration directory rather than only in chat history.
+10. **Harness isolation and two-platform discipline.** A harness, its provider/account target, model profile, session, permission semantics, health state, and capability record are separate. Every future change considers both macOS and Windows and supplies verification or an explicit not-affected rationale.
 
 ## Implementation
 
@@ -38,10 +39,17 @@ The project-local Skill includes these parts:
 | Topic/session registry | Record topic bindings, forks, active/archived status, and output references. |
 | Independent reviewer | Request one bounded critique from a provider other than the executor. |
 | Metrics recorder | Store routing metadata without storing prompts, tokens, or file contents. |
+| Harness adapter (planned) | Normalize each CLI's invocation, session identity, permission denial, output, and failure semantics without mixing harnesses. |
+
+## Headless CLI reference baseline and roadmap
+
+[The reference baseline](docs/headless-cli-references/README.md) preserves the official Claude Code and Antigravity headless pages used to design this project. It is important engineering input, not proof that an option is installed, enabled, or safe; check the official page and local CLI help before relying on a version-sensitive flag.
+
+Claude Code's native JSON Schema adapter, the shared state boundary, and Antigravity's explicit read-only adapter are implemented with local fake tests. Before any real Antigravity call, the user must authenticate interactively, approve the non-secret local harness profile, and authorize a minimal smoke on each platform. Antigravity is not a third Claude Code provider and is not in the current automatic DeepSeek/MiMo rotation. It is only eligible for an explicitly requested independent review, second proposal, counterargument, or risk list that is also new, no-history, non-sensitive, and read-only; a new topic alone never selects it. Ordinary project collaboration remains Claude Code's role.
 
 ## Quick Start after Fork
 
-Prerequisites: Python 3.10+ and a working local Claude Code CLI. Clone or fork the repository, then initialize only local runtime files:
+Prerequisites for the current path: Python 3.10+ and a working local Claude Code CLI. Antigravity is not required until its planned adapter is explicitly enabled. Clone or fork the repository, then initialize only local runtime files:
 
 ```bash
 # macOS / Linux
@@ -63,13 +71,13 @@ python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider
 py -3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
 ```
 
-Passing the diagnostic is not egress approval. After deciding that a provider may receive this project's minimal non-sensitive handoffs, record a local approval bound to its current non-secret profile fingerprint:
+Passing the diagnostic is not a host-platform egress approval. During an authorized implementation, Codex records the current non-secret local fingerprint before the provider's first call:
 
 ```bash
 python3 .agents/skills/external-agent-collaboration/scripts/trust_provider.py --provider <provider-key> --approve
 ```
 
-Changing endpoint, model mappings, configuration directory, or non-secret environment invalidates the approval and requires the user to run the command again. It neither reads nor prints credentials, and cannot bypass the host platform's final egress approval.
+Changing endpoint, model mappings, configuration directory, or non-secret environment invalidates the record; Codex refreshes it during the next authorized implementation. The command neither reads nor prints credentials, and cannot bypass the host platform's final egress approval.
 
 Direct tokens in configuration files are the supported default. A legacy shared `providers.local.json` remains supported; when platform paths differ, place the relevant profiles in `providers.local.macos.json` or `providers.local.windows.json`. Do not run a tool that moves tokens into environment variables or OS credential stores unless the user explicitly changes this policy.
 
@@ -105,7 +113,7 @@ Each profile should supply only what the local CLI needs: an isolated configurat
 
 ## How to contribute
 
-When the workflow is implemented or changed, update the Skill instructions, tests, design documents, and this README together. New behavior should be demonstrated by local regression tests before it is treated as reliable. Real provider checks should use minimal, non-sensitive tasks and be run deliberately because they consume the configured service.
+When the workflow is implemented or changed, update the Skill instructions, tests, design documents, and this README together. New behavior should be demonstrated by local regression tests before it is treated as reliable. Every change records macOS and Windows impact and validates both platforms, or gives a concrete not-affected rationale. Real provider checks should use minimal, non-sensitive tasks and be run deliberately because they consume the configured service.
 
 ## Status
 

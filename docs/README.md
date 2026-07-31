@@ -9,6 +9,12 @@
 - [实施计划文档](实施计划文档.md)：当前工作包、优先级和完成条件。
 - [测试用例文档](测试用例文档.md)：当前验收范围和已执行结果。
 
+## 工程参考基线
+
+- [Headless CLI reference baseline](headless-cli-references/README.md)：Claude Code 与 Antigravity CLI 的官方页面转换稿。它们是 invocation、权限、结构化输出、会话和跨平台测试设计的重要参考；采用具体 flag 前仍须核对官方原文和本机 CLI。
+
+所有后续 Agent 的实现、文档和测试迭代必须同时评估 macOS 与 Windows：记录平台影响，提供两端验证，或说明为何不受影响。不得以 POSIX 路径、shell、权限或凭据假设替代 Windows 验证。
+
 ## 专题与历史
 
 - [专题索引](专题/README.md)：按专题查看讨论基线、实施状态和证据。

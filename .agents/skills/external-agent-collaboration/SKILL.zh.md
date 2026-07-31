@@ -24,18 +24,24 @@
 
 1. 存在时读取 `.ai-collaboration/project-context.md` 和 `decisions.md`；继续某个主题时，只定位并读取 `.ai-collaboration/topics/` 中对应的一页状态，不默认加载 runtime output 或 transcript。
 2. 写入不含敏感内容的请求文件，运行 `scripts/classify_task.py`，并阅读 [任务分类说明](references/task-classification.md)。结果为 `prohibited` 时停止；结果为 `native_codex` 时使用原生工具；只有 `external_agent` 或已记录的合理覆盖才继续。
-3. 明确 action、主题、工作目录、允许路径、必要检查和 provider。首次真实外部调用前，必须由用户用 `trust_provider.py --provider <key> --approve` 明确批准该 provider 的当前本地 profile；该命令只写入本地非密钥指纹。没有信任记录时，不得把普通“实施”请求解释为新的外发授权。
+3. 明确 action、主题、工作目录、允许路径、必要检查和 provider。首次真实外部调用前，确保用 `trust_provider.py --provider <key> --approve` 为当前本地 profile 写入非密钥指纹。本仓库的 `AGENTS.md` 已提供维护者的持续授权，可在实施中直接创建或刷新该记录，不得再请求冗余的对话确认；但这不绕过 Codex 宿主平台要求的外发审批。
 4. 尊重用户指定的 provider；否则恢复精确匹配的活动会话；新主题使用 [协作协议](references/collaboration-protocol.md) 中的路由规则。大量非敏感文本先按 [batch 协议](references/batch-protocol.md) 生成并审阅 dry-run manifest，绝不使用一次大范围 `execute`。
 5. execute 需要新建文件/目录且能力记录缺失、超过七天、CLI/profile 变化或发生工具失败时，运行 `scripts/probe_capabilities.py --provider <provider>`。
 6. 同时检查 provider 能力记录和 session 的 `initial_toolset`。能力记录只描述同一主机平台上的新 session，旧 session 也不能直接套用。不同主机平台或 workspace identity 的 session 不得恢复。需要时 fork/new session；只有当前能力记录明确实测为 POSIX shell 时，才使用最小精确 Bash 创建白名单，否则安全停止。
 7. 将简洁 handoff 写入 `.ai-collaboration/handoffs/`。每个 execute 都必须按 [expected outcomes](references/expected-outcomes.md) 写 outcomes JSON。持续主题同时传入简短的 `--topic-goal` 和 `--stop-rule`，用于更新一页本地 topic 状态，而非保存 transcript。
 8. 不得加入 `.env` 内容、token、凭证、私钥、客户导出或无关私人文件。
 
+## 参考资料与平台约束
+
+改造 harness 调用、权限、会话、结构化输出或分类策略时，使用 [headless CLI 参考基线](../../../docs/headless-cli-references/README.md) 作为重要设计输入；它不是实现事实本身，涉及版本的 flag 仍须在采用前核对官方页面和本机 CLI。
+
+每次迭代都必须明确考虑 macOS 与 Windows。变更必须记录平台影响，并给出两端验证或具体的“不受影响”理由；不得在 Windows 上假定 POSIX 路径、Bash、文件权限、launcher、shell 行为或凭据存储可用。
+
 ## 调用与安全
 
-每个任务首次调用某 provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。`collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。最外层严格匹配的 ` ```json ` fence 会在合约校验前剥离；若结果仍不合约但内容可用，不自动重复同一 consult，而是消费受限结果或按明确路径检查本地 output。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
+每个任务首次调用 Claude Code provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。Antigravity 的显式 P2 只读路径还必须运行 `scripts/doctor_harness.py --profile antigravity_readonly --json`，并具备 `trust_harness.py` 的当前指纹记录；`AGENTS.md` 中的持续授权允许直接进行其验收所需的无敏感真实 smoke。它尚不是自动路由候选。`collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。最外层严格匹配的 ` ```json ` fence 会在合约校验前剥离；若结果仍不合约但内容可用，不自动重复同一 consult，而是消费受限结果或按明确路径检查本地 output。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
 
-`trusted-providers.local.json` 是第二份 ignored 本地文件：仅当 provider key 已获用户批准，且当前 profile 的非密钥指纹仍与记录一致时，runner 才会执行外发调用。endpoint、模型映射、配置目录或非密钥 environment 改变都会使批准失效，必须重新运行 `trust_provider.py --approve`。这是项目内可审计的信任门，不绕过 Codex 宿主平台的最终外发审批。
+`trusted-providers.local.json` 是第二份 ignored 本地文件：仅当 provider key 的当前 profile 非密钥指纹仍与记录一致时，runner 才会执行外发调用。endpoint、模型映射、配置目录或非密钥 environment 改变都会使记录失效；按维护者的持续授权直接刷新。它是项目内可审计的信任门，不绕过 Codex 宿主平台的最终外发审批。
 
 不要切换 CC Switch 全局 provider。provider 凭据默认保存在用户自行管理、被 Git 忽略的配置文件中。推荐使用无密钥的共享定义，叠加平台专属的 `.ai-collaboration/providers.local.macos.json` 与 `.ai-collaboration/providers.local.windows.json`；每份文件可保存该平台的 `auth_token`、launcher 和隔离 `CLAUDE_CONFIG_DIR`。是否由用户的私有同步机制同步这些文件完全由用户决定。不得要求用户使用 Keychain、Credential Manager 或环境变量，也绝不把凭据复制进 handoff、输出、日志或版本化文件。
 

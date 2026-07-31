@@ -5,6 +5,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from harness_state import state_identity
+from platform_support import host_platform
+
 
 def metric_key(task_type: str, mode: str) -> str:
     return f"{task_type}:{mode}"
@@ -76,6 +79,10 @@ def append_event(metrics: dict[str, Any], event: dict[str, Any]) -> None:
     allowed = {
         "run_id", "timestamp", "provider", "model_profile", "task_type", "mode",
         "risk", "status", "duration_seconds", "tool_refusal", "quality_score",
-        "user_adopted", "rework_count", "route_basis", "cost_usd", "input_bytes", "handoff_bytes", "result_bytes", "return_bytes", "return_mode", "batch_status", "sample_passed",
+        "user_adopted", "rework_count", "route_basis", "cost_usd", "input_bytes", "handoff_bytes", "result_bytes", "return_bytes", "return_mode", "batch_status", "sample_passed", "harness", "harness_profile", "state_identity",
     }
-    metrics["events"].append({key: value for key, value in event.items() if key in allowed and value is not None})
+    stored = {key: value for key, value in event.items() if key in allowed and value is not None}
+    stored.setdefault("harness", "claude_code")
+    stored.setdefault("harness_profile", str(stored.get("model_profile") or stored.get("provider") or "unknown"))
+    stored.setdefault("state_identity", state_identity(str(stored["harness"]), str(stored["harness_profile"]), host_platform()))
+    metrics["events"].append(stored)

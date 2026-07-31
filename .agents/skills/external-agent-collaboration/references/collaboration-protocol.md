@@ -9,9 +9,17 @@
 
 Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务分类只在选中后决定是否允许实际委派。`.ai-collaboration/provider-health.json` 只保存 failure kind、次数和 retry time，不保存 prompt、文件正文、token、URL query 或原始 stderr。billing/authentication/endpoint/configuration 冷却 24 小时；暂时故障按 5 分钟、15 分钟、1 小时、6 小时递增。无后台探测；到期后由下一次原本允许的调用恢复尝试。
 
-在首次真实外发前，用户必须运行 `trust_provider.py --provider <key> --approve`。该命令在 ignored 的 `trusted-providers.local.json` 写入 provider key 与当前 profile 的非密钥 fingerprint；runner 只接受仍匹配的记录。profile 的 endpoint、模型映射、配置目录或非密钥环境变化时，记录自动失效。它用于区分“本机 Claude Code harness”与“已获用户批准的 provider egress”，但不能绕过 Codex 宿主平台的最终审批。
+在首次真实外发前，Codex 在维护者的持续授权下运行 `trust_provider.py --provider <key> --approve`。该命令在 ignored 的 `trusted-providers.local.json` 写入 provider key 与当前 profile 的非密钥 fingerprint；runner 只接受仍匹配的记录。profile 的 endpoint、模型映射、配置目录或非密钥环境变化时，记录自动失效并由 Codex 在下一次已授权实施中刷新。它用于区分“本机 Claude Code harness”与当前配置的 provider egress，但不能绕过 Codex 宿主平台的最终审批。
 
 Provider token 的默认载体是用户管理、Git 忽略的配置文件。可使用通用 `providers.local.json`，或为 macOS/Windows 分别使用 platform local profile；token 可直接写入对应文件。不得要求 Keychain、Credential Manager 或环境变量，也不得将 token 写入 Git、handoff、输出、日志或外部提示词。
+
+Antigravity 目前只有显式只读路径：先运行 `doctor_harness.py --profile antigravity_readonly --json`，用户完成一次交互登录后，Codex 用 `trust_harness.py --profile antigravity_readonly --approve` 记录非密钥 profile fingerprint，才可由 `consult_antigravity.py` 发起已授权的 consult/critique。它固定 `plan`、不允许 execute、不会自动加入 DeepSeek/MiMo 轮换，也不会使用 `--dangerously-skip-permissions`。诊断明确不验证登录，真实 smoke 才能验证 cached authentication。
+
+## 参考资料与双平台纪律
+
+[Headless CLI reference baseline](../../../../docs/headless-cli-references/README.md) 是调用协议演进的重要依据。其页面转换稿只用于设计比对；任何版本相关 flag、权限语义或输出字段在实施前必须以官方页面与本机 CLI 为准。
+
+后续 Agent 的每次实现和文档迭代都须同时考虑 macOS 与 Windows。对路径、launcher、shell、权限、认证、本地 profile、session/capability 记录和验证命令，必须记录双端影响并覆盖两端测试，或说明其为何不受影响。不得以 macOS/POSIX 成功替代 Windows 验证。
 
 ## 能力探测
 

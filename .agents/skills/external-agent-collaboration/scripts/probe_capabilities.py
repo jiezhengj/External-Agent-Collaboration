@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from platform_support import host_platform, supports_posix_shell_fallback
+from harness_state import state_identity
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
@@ -120,6 +121,8 @@ def main() -> int:
 
     record = {
         "checked_at": now(), "profile_fingerprint": fingerprint, "claude_cli_version": version,
+        "harness": "claude_code", "harness_profile": args.provider,
+        "state_identity": state_identity("claude_code", args.provider, host_platform()),
         "host_platform": host_platform(), "shell_kind": "posix" if supports_posix_shell_fallback() else "none",
         "native_write": native_write, "bash_create_fallback": bash_create,
         "evidence": {"native_exit_code": native_exit, "fallback_exit_code": fallback_exit},

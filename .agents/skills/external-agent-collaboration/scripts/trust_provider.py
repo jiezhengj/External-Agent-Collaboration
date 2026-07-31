@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import collaborate
+from harness_state import decorate_legacy_record
 
 
 def main() -> int:
@@ -23,6 +24,7 @@ def main() -> int:
     providers = trust["providers"]
     if args.approve:
         providers[args.provider] = {"approved": True, "profile_fingerprint": collaborate.profile_fingerprint(profile)}
+        decorate_legacy_record(providers[args.provider], args.provider, collaborate.host_platform())
         collaborate.write_json(collaborate.TRUST_FILE, trust)
         print(f"Approved local external collaboration for provider '{args.provider}'. No credential or endpoint value was printed.")
     else:

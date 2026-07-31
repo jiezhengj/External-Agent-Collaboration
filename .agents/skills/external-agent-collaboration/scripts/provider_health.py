@@ -6,6 +6,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from harness_state import state_identity
+from platform_support import host_platform
+
 
 LONG_COOLDOWN_KINDS = {"billing", "authentication", "endpoint", "configuration"}
 TRANSIENT_COOLDOWNS = (5, 15, 60, 360)  # minutes, capped at six hours
@@ -55,7 +58,7 @@ def status(data: dict[str, Any], provider: str, at: datetime | None = None) -> d
     }
 
 
-def record_failure(data: dict[str, Any], provider: str, kind: str, at: datetime | None = None) -> dict[str, Any]:
+def record_failure(data: dict[str, Any], provider: str, kind: str, at: datetime | None = None, harness: str = "claude_code", harness_profile: str | None = None) -> dict[str, Any]:
     current = data.setdefault("providers", {}).get(provider)
     prior_count = int(current.get("failure_count", 0)) if isinstance(current, dict) else 0
     when = timestamp(at)
@@ -74,13 +77,20 @@ def record_failure(data: dict[str, Any], provider: str, kind: str, at: datetime 
         "failure_count": count,
         "opened_at": when.isoformat(),
         "retry_after": (when + timedelta(minutes=minutes)).isoformat(),
+        "harness": harness,
+        "harness_profile": harness_profile or provider,
+        "state_identity": state_identity(harness, harness_profile or provider, host_platform()),
     }
     data["providers"][provider] = record
     return record
 
 
-def record_success(data: dict[str, Any], provider: str, at: datetime | None = None) -> None:
-    data.setdefault("providers", {})[provider] = {"state": "healthy", "last_success_at": timestamp(at).isoformat()}
+def record_success(data: dict[str, Any], provider: str, at: datetime | None = None, harness: str = "claude_code", harness_profile: str | None = None) -> None:
+    data.setdefault("providers", {})[provider] = {
+        "state": "healthy", "last_success_at": timestamp(at).isoformat(),
+        "harness": harness, "harness_profile": harness_profile or provider,
+        "state_identity": state_identity(harness, harness_profile or provider, host_platform()),
+    }
 
 
 def classify_failure(exit_code: int, stderr: str) -> str | None:

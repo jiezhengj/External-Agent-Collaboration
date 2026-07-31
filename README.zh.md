@@ -4,7 +4,7 @@
 
 ## 项目初衷
 
-这个仓库用于说明并承载一个项目级协作流程：由 Codex 通过本地 Claude Code CLI 协调持续的外部编码协作者。Codex 始终面向用户：接收请求、判断是否值得委派、检查结果并反馈。外部模型只是在明确边界内参与的协作者。
+这个仓库用于说明并承载一个项目级协作流程：由 Codex 通过本地 headless CLI harness 协调持续的外部编码协作者。Claude Code 是当前已实现的项目协作者 harness；Antigravity 已有独立、受控的显式只读 adapter，但尚未进入自动路由。Codex 始终面向用户：接收请求、判断是否值得委派、检查结果并反馈。外部模型只是在明确边界内参与的协作者。
 
 项目想解决的问题很具体：长期本地工作不能只靠一次性调用外部模型。需要把 provider 和会话分开、保留项目背景、限制文件修改范围，并验证实际发生了什么。
 
@@ -21,6 +21,7 @@
 7. **按能力处理新建文件。** 新会话实测到的 `Write` 能力，与旧会话创建时的工具集分开处理。旧会话缺工具时优先创建可追溯 fork；精确 Shell 兜底只在必要时使用。
 8. **一次独立审查。** 高风险实施可由另一 provider 做一次只读 critique。审查者不会自动再次调用执行者，不产生辩论循环。
 9. **持久化本地状态。** 项目背景、决策、交接、输出、会话、能力、路由指标和归档写入本地协作目录，而不是只存在于聊天记录。
+10. **Harness 隔离与双平台纪律。** harness、provider/账号目标、模型 profile、会话、权限语义、health 和能力记录彼此独立。任何后续变更都须同时考虑 macOS 与 Windows，并提供验证或明确的不受影响理由。
 
 ## 实现内容
 
@@ -36,10 +37,17 @@
 |主题/会话登记|记录主题绑定、fork、活动/归档状态和产物引用。|
 |独立审查器|请求与执行者不同的 provider 进行一次受限 critique。|
 |指标记录器|保存路由元数据，不保存提示词、token 或文件正文。|
+|Harness adapter（规划）|归一化每种 CLI 的调用、会话标识、权限拒绝、输出与失败语义，不混淆不同 harness。|
+
+## Headless CLI 参考基线与路线图
+
+[参考基线](docs/headless-cli-references/README.md) 保存了用于本工程设计的 Claude Code 与 Antigravity 官方 headless 页面。它是重要工程输入，不证明某个选项已经安装、启用或安全；采用版本相关 flag 前仍须核对官方页面和本机 CLI help。
+
+Claude Code 原生 JSON Schema adapter、通用 state 边界与 Antigravity 显式只读 adapter 均已完成本地 fake 测试。任何真实 Antigravity 调用前，用户仍须完成交互登录、批准无密钥本地 harness profile，并在每个平台授权最小 smoke。Antigravity 不是第三个 Claude Code provider，也不进入当前 DeepSeek/MiMo 自动轮换。只有任务**明确要求**独立评审、第二方案、反证或风险清单，且同时是新主题、无既有会话、非敏感、只读时才选择它；新主题本身绝不触发 Antigravity。普通项目协作仍由 Claude Code 承担。
 
 ## Fork 后快速开始
 
-前置条件：Python 3.10+，以及可在本机运行的 Claude Code CLI。Fork 或克隆仓库后，先初始化仅限本地的运行文件：
+当前路径的前置条件：Python 3.10+，以及可在本机运行的 Claude Code CLI。Antigravity 在其 adapter 被明确启用前不是前置条件。Fork 或克隆仓库后，先初始化仅限本地的运行文件：
 
 ```bash
 # macOS / Linux
@@ -61,13 +69,13 @@ python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider
 py -3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider <provider-key> --json
 ```
 
-通过诊断不等于授权外发。确认该 provider 可接收本项目的最小非敏感 handoff 后，再在本机写入与当前非密钥 profile 指纹绑定的批准记录：
+通过诊断不等于宿主平台的外发审批。在已授权的实施中，Codex 会在首次调用前于本机写入与当前非密钥 profile 指纹绑定的记录：
 
 ```bash
 python3 .agents/skills/external-agent-collaboration/scripts/trust_provider.py --provider <provider-key> --approve
 ```
 
-profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，批准自动失效，必须由用户重新执行该命令。该机制不读取或打印凭证，也不绕过 Codex 宿主的最终外发审批。
+profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，记录自动失效；Codex 会在下一次已授权实施中刷新。该机制不读取或打印凭证，也不绕过 Codex 宿主的最终外发审批。
 
 配置文件直接 token 是本项目认可的默认方式。旧版通用 `providers.local.json` 可继续使用；需要分别维护平台路径时，将对应 profile 放入 `providers.local.macos.json` 或 `providers.local.windows.json`。不要运行将 token 迁移至环境变量或 OS 凭据库的工具，除非你日后主动改变这一原则。
 
@@ -103,7 +111,7 @@ profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，
 
 ## 维护方式
 
-当流程落地或发生变更时，应同步更新 Skill 说明、测试、设计文档和本 README。新能力先通过本地回归测试，再视为可依赖。真实 provider 测试应使用最小、无敏感内容的任务，并有意识地执行，因为它会消耗已配置服务。
+当流程落地或发生变更时，应同步更新 Skill 说明、测试、设计文档和本 README。新能力先通过本地回归测试，再视为可依赖。每项变更均要记录 macOS/Windows 影响并验证两端，或给出具体的不受影响理由。真实 provider 测试应使用最小、无敏感内容的任务，并有意识地执行，因为它会消耗已配置服务。
 
 ## 当前状态
 
