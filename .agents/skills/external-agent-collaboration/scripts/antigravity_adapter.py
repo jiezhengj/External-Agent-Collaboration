@@ -35,6 +35,7 @@ class AntigravityAdapter:
     name = "antigravity"
     MODES = {"plan", "accept-edits"}
     TERMINAL_SUCCESS = "SUCCESS"
+    PROCESS_TIMEOUT_GRACE_SECONDS = 15
 
     @staticmethod
     def doctor(profile: dict[str, Any]) -> list[str]:
@@ -63,8 +64,12 @@ class AntigravityAdapter:
         return command
 
     def invoke(self, request: AntigravityInvocation) -> tuple[int, str, str]:
+        # ``--print-timeout`` is enforced by AGY itself.  Keep a small outer
+        # process grace period so Python does not kill AGY while it is emitting
+        # the terminal stream event or shutting down after that limit.
+        process_timeout = request.timeout + self.PROCESS_TIMEOUT_GRACE_SECONDS if request.timeout > 0 else None
         try:
-            completed = subprocess.run(self.command(request), cwd=request.workdir, env=request.environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=request.timeout)
+            completed = subprocess.run(self.command(request), cwd=request.workdir, env=request.environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=process_timeout)
         except subprocess.TimeoutExpired as exc:
             return 124, exc.stdout or "", f"Timed out after {request.timeout}s"
         return completed.returncode, completed.stdout, completed.stderr

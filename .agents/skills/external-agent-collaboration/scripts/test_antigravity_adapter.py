@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from antigravity_adapter import AntigravityAdapter, AntigravityInvocation
 
@@ -65,6 +66,18 @@ def main() -> None:
     assert execute_argv[execute_argv.index("--mode") + 1] == "accept-edits"
     full_auto_argv = adapter.command(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "accept-edits", "dangerously_skip_permissions": True}))
     assert "--dangerously-skip-permissions" in full_auto_argv
+    captured: dict[str, object] = {}
+
+    def fake_run(*_args: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return type("Completed", (), {"returncode": 0, "stdout": "{}", "stderr": ""})()
+
+    with patch("antigravity_adapter.subprocess.run", side_effect=fake_run):
+        adapter.invoke(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "plan"}))
+    assert captured["timeout"] == 10 + adapter.PROCESS_TIMEOUT_GRACE_SECONDS
+    with patch("antigravity_adapter.subprocess.run", side_effect=fake_run):
+        adapter.invoke(AntigravityInvocation("agy", "review", Path.cwd(), {}, 0, SCHEMA, {"mode": "plan"}))
+    assert captured["timeout"] is None
     print("antigravity-adapter tests passed")
 
 

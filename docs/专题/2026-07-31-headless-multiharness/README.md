@@ -2,7 +2,7 @@
 
 ## Status
 
-WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged; Antigravity has no automatic routing. P3 diagnostics also completed: macOS/Windows controlled experiments and a macOS disposable full-auto experiment exposed the write tool and effective `always-proceed`, yet did not modify the declared target. AGY is therefore fixed to its verified P2 read-only role; automatic project execute remains Claude Code only. P4 candidate policy remains out of scope.
+WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged; Antigravity has no automatic routing. P3 diagnostics also completed: macOS/Windows controlled experiments and disposable full-auto experiments on both platforms exposed the write tool and effective `always-proceed`, yet did not modify the declared target. AGY is therefore fixed to its verified P2 read-only role; automatic project execute remains Claude Code only. P4 candidate policy remains out of scope.
 
 ## Problem and baseline
 

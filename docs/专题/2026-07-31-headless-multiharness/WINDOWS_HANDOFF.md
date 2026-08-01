@@ -76,11 +76,11 @@ py -3 .agents\skills\external-agent-collaboration\scripts\consult_antigravity.py
 
 已将 Windows 结果写入 [迭代记录](../../迭代记录.md)。不得记录 token、完整 stderr、prompt 或 provider 输出。已更新专题入口；P2 已具备双平台证据。
 
-P3 已完成足以固定产品结论的诊断：除第 5.1 节这一次 Windows isolated evidence-parity 复现外，未来 AGY CLI/agent 更新后才可再通过同一 isolated P3 契约重新验证；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
+P3 已完成足以固定产品结论的双平台诊断：未来仅在 AGY CLI/agent 更新后，才可通过同一 isolated P3 契约重新验证；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
 
-## 5.1 达到 macOS 当前证据进度：Windows isolated full-auto 对照
+## 5.1 已完成：Windows isolated full-auto 对照
 
-除本节外，Windows 已具备与 macOS 相同的 Claude Code、路由、P2 Antigravity 只读、fake launcher 和本地回归证据。macOS 另有一项 **disposable isolated full-auto** 实验：即使 effective permission mode 为 `always-proceed`、`write_to_file` 可用，AGY 仍未写入唯一目标。Windows 尚未运行这项完全相同的隔离对照；它是 Windows Codex 达到 macOS 当前证据进度的唯一剩余实机工作。
+Windows 已具备与 macOS 相同的 Claude Code、路由、P2 Antigravity 只读、fake launcher、本地回归和 **disposable isolated full-auto** 证据。Windows run `isolated-1785572668-1f49fab1` 返回 CLI exit code `0`、terminal `SUCCESS`、`permission_mode=always-proceed`、`write_tool_available=true`，但 `write_tool_step_count=0`、目标文件仍为 `P3 pending`，且 `non_target_changed_paths=[]`。这与 macOS 的 full-auto 结论一致：AGY 当前不会把可见的写入工具用于该唯一目标；它不是 Windows 或 settings allowlist 问题。
 
 这不是重新尝试让 AGY 加入 execute 路由，也不是修改 settings、扩大路径 allowlist 或在主工作树传 `--dangerously-skip-permissions`。它只在一个临时目录运行，项目工作树不会被交给 AGY。请先拉取当前 `main`，完成第 1–2 节的 profile/本地回归检查；若 CLI、profile 或 trust fingerprint 自上次 Windows smoke 后发生变化，第 1、3、4 节的最小 smoke 也要按当前状态重跑。
 
@@ -118,7 +118,7 @@ py -3 .agents\skills\external-agent-collaboration\scripts\execute_antigravity_is
 
 预期当前版本返回 exit code `3`，并在 ignored `.ai-collaboration\outputs\isolated-*.json` 留下脱敏 record：`target_before` 必须是 `P3 pending`，`tool_diagnostics.permission_mode` 应为 `always-proceed`，`tool_diagnostics.write_tool_available` 为 true，`target_matched` 为 false，`non_target_changed_paths` 为空。随后运行 `git status --short`，确认没有 tracked 项目文件变化；不得提交该运行态 record。
 
-若这次在 Windows 意外 `target_matched: true`，也**不得**直接启用 AGY execute：记录 Windows CLI 版本、profile fingerprint、record 中的无内容诊断字段和 Git revision，然后在 macOS 用同一 fresh pending source 重现；只有跨平台成功、完整回归和新的 DEC 都成立后才可重新评估 P3。若仍如预期失败，则记录结果并停止 AGY execute 相关工作；产品结论保持“AGY P2 只读，Claude Code 为唯一自动 execute harness”。
+本对照已按预期失败。未来若 AGY CLI/agent 更新后重验意外得到 `target_matched: true`，也**不得**直接启用 AGY execute：记录 Windows CLI 版本、profile fingerprint、record 中的无内容诊断字段和 Git revision，然后在 macOS 用同一 fresh pending source 重现；只有跨平台成功、完整回归和新的 DEC 都成立后才可重新评估 P3。产品结论保持“AGY P2 只读，Claude Code 为唯一自动 execute harness”。
 
 ## 6. P3 Windows 实测问题日志（2026-08-01，历史诊断）
 
