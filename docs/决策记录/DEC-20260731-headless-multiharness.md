@@ -29,6 +29,12 @@
 - `--dangerously-skip-permissions` 不得用于主工作树自动执行；仅维护者显式启用、trusted 的 disposable isolated experiment 可使用它。软拒绝即使进程退出 0 也必须为 `blocked_by_permission`。
 - 每一实施阶段都须有 macOS + Windows fake launcher/本地回归；当前平台已配置、已信任的 profile 直接运行最小真实 smoke。
 
+## 实施结果更新（2026-08-01）
+
+- P0、P1、P2 均已取得 macOS 与 Windows 证据；Antigravity 的已验证自动角色是 P2 只读独立评审。
+- P3 的主工作树受控实验及 macOS disposable full-auto 实验均未满足唯一目标文件的写入 outcome；后者已证明 `write_to_file` 可用且 effective mode 为 `always-proceed`，因此不再归因于 Windows 或 settings allowlist。
+- 在新的 CLI/agent 版本以同一 isolated P3 契约取得成功证据前，Antigravity 不进入 execute 路由；Claude Code 是唯一自动项目 execute harness。
+
 ## 受影响文档与证据
 
 - [产品需求文档](../产品需求文档.md)

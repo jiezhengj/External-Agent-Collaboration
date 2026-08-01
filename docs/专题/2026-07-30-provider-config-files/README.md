@@ -40,7 +40,7 @@
    python3 .agents/skills/external-agent-collaboration/scripts/doctor.py --provider deepseek --json
    ```
 
-4. 运行本地回归与文档差异检查。不要发起真实 provider 调用，除非用户在 macOS 上重新明确授权。
+4. 运行本地回归与文档差异检查。已配置且当前 fingerprint 已信任的 macOS profile 可直接运行最小、无敏感真实调用；只有登录/MFA 等实际交互才需要人处理。
 5. 将成功/失败与不含 token 的证据写入 `docs/迭代记录.md`。只有用户明确要求，并确认两端配置均可用后，才可运行 `migrate_portable_profiles.py --cleanup-legacy` 清理旧通用 profile。
 
 ## macOS 接手结果（2026-07-31）

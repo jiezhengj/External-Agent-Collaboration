@@ -43,7 +43,7 @@
 
 [参考基线](docs/headless-cli-references/README.md) 保存了用于本工程设计的 Claude Code 与 Antigravity 官方 headless 页面。它是重要工程输入，不证明某个选项已经安装、启用或安全；采用版本相关 flag 前仍须核对官方页面和本机 CLI help。
 
-Claude Code 原生 JSON Schema adapter、通用 state 边界与 Antigravity 显式只读 adapter 均已完成本地 fake 测试。任何真实 Antigravity 调用前，用户仍须完成交互登录、批准无密钥本地 harness profile，并在每个平台授权最小 smoke。Antigravity 不是第三个 Claude Code provider，也不进入当前 DeepSeek/MiMo 自动轮换。只有任务**明确要求**独立评审、第二方案、反证或风险清单，且同时是新主题、无既有会话、非敏感、只读时才选择它；新主题本身绝不触发 Antigravity。普通项目协作仍由 Claude Code 承担。
+Claude Code 原生 JSON Schema adapter、通用 state 边界与 Antigravity 显式只读 adapter 均已完成本地 fake 测试和双平台最小真实 smoke。已配置且当前 fingerprint 已信任的本机 harness 可直接运行最小真实验证；只有网页登录/MFA 等真实交互才需要人处理。Antigravity 不是第三个 Claude Code provider，也不进入当前 DeepSeek/MiMo 自动轮换。只有任务**明确要求**独立评审、第二方案、反证或风险清单，且同时是新主题、无既有会话、非敏感、只读时才选择它；新主题本身绝不触发 Antigravity。AGY headless 自动 execute 已在 full-auto 隔离实验中验证失败，普通项目协作和所有自动 execute 仍由 Claude Code 承担。
 
 ## Fork 后快速开始
 

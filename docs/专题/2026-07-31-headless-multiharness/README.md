@@ -2,7 +2,7 @@
 
 ## Status
 
-WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged; Antigravity has no automatic routing. The runner's host must allow agy user-log and localhost resources. P3 has a bounded experimental executor, but its identical macOS/Windows smoke currently completes without a file-tool attempt and therefore fails outcome verification; it remains blocked. P4 candidate policy remains out of scope.
+WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged; Antigravity has no automatic routing. P3 diagnostics also completed: macOS/Windows controlled experiments and a macOS disposable full-auto experiment exposed the write tool and effective `always-proceed`, yet did not modify the declared target. AGY is therefore fixed to its verified P2 read-only role; automatic project execute remains Claude Code only. P4 candidate policy remains out of scope.
 
 ## Problem and baseline
 
@@ -24,7 +24,7 @@ The project grew from a Claude Code-specific runner. It now needs a deliberate b
 | P0 | ClaudeCodeAdapter and native JSON Schema output | macOS/Windows fake CLI tests; existing profile behavior unchanged. |
 | P1 | Common adapter/state schema and dry-run migration | no cross-harness session, trust, health or capability reuse. |
 | P2 | Antigravity read-only adapter | two-platform fake CLI plus a minimal real smoke for each configured, trusted local profile. |
-| P3 | Antigravity controlled execute | scoped permission, rollback and soft-denial behavior proven on both platforms. |
+| P3 | Antigravity controlled execute | Not admitted: the isolated full-auto experiment did not satisfy its target outcome. Revalidate only after a future CLI/agent update. |
 | P4 | Optional harness candidate policy | user-approved benchmark evidence and explicit DEC. |
 
 ## Current documents

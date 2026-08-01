@@ -39,17 +39,17 @@ The project-local Skill includes these parts:
 | Topic/session registry | Record topic bindings, forks, active/archived status, and output references. |
 | Independent reviewer | Request one bounded critique from a provider other than the executor. |
 | Metrics recorder | Store routing metadata without storing prompts, tokens, or file contents. |
-| Harness adapter (planned) | Normalize each CLI's invocation, session identity, permission denial, output, and failure semantics without mixing harnesses. |
+| Harness adapter | Normalize each CLI's invocation, session identity, permission denial, output, and failure semantics without mixing harnesses. |
 
 ## Headless CLI reference baseline and roadmap
 
 [The reference baseline](docs/headless-cli-references/README.md) preserves the official Claude Code and Antigravity headless pages used to design this project. It is important engineering input, not proof that an option is installed, enabled, or safe; check the official page and local CLI help before relying on a version-sensitive flag.
 
-Claude Code's native JSON Schema adapter, the shared state boundary, and Antigravity's explicit read-only adapter are implemented with local fake tests. Before any real Antigravity call, the user must authenticate interactively, approve the non-secret local harness profile, and authorize a minimal smoke on each platform. Antigravity is not a third Claude Code provider and is not in the current automatic DeepSeek/MiMo rotation. It is only eligible for an explicitly requested independent review, second proposal, counterargument, or risk list that is also new, no-history, non-sensitive, and read-only; a new topic alone never selects it. Ordinary project collaboration remains Claude Code's role.
+Claude Code's native JSON Schema adapter, the shared state boundary, and Antigravity's explicit read-only adapter are implemented with local fake tests and macOS/Windows real smoke evidence. A configured Antigravity profile whose current non-secret fingerprint is trusted may run the minimal real smoke directly; only a genuine web login, MFA, or similar physical interaction requires the operator. Antigravity is not a third Claude Code provider and is not in the current automatic DeepSeek/MiMo rotation. It is only eligible for an explicitly requested independent review, second proposal, counterargument, or risk list that is also new, no-history, non-sensitive, and read-only; a new topic alone never selects it. Its full-auto isolated execute experiment did not modify the declared target even with the write tool available, so ordinary collaboration and all automatic project edits remain Claude Code's role.
 
 ## Quick Start after Fork
 
-Prerequisites for the current path: Python 3.10+ and a working local Claude Code CLI. Antigravity is not required until its planned adapter is explicitly enabled. Clone or fork the repository, then initialize only local runtime files:
+Prerequisites for the current path: Python 3.10+ and a working local Claude Code CLI. Antigravity is optional and only needed for its explicit read-only independent-review role. Clone or fork the repository, then initialize only local runtime files:
 
 ```bash
 # macOS / Linux

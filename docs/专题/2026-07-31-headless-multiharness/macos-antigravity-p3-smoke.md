@@ -1,4 +1,6 @@
-# macOS Antigravity P3 controlled execute smoke
+# Historical macOS Antigravity P3 controlled-execute smoke
+
+> This prompt belongs to the pre-isolated diagnostic. It did not establish AGY write capability. The current conclusion is in [README.md](README.md): AGY is read-only until the identical isolated P3 contract succeeds after a future CLI/agent update.
 
 Edit only the existing file at `docs/专题/2026-07-31-headless-multiharness/p3-smoke/accepted.md`.
 

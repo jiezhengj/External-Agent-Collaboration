@@ -1,7 +1,7 @@
 # 专题：外部代理协作效能优化
 
 - 标识：`TOPIC-20260729-collaboration-efficiency`
-- 状态：**P0、P1、P2、P3 已实现，待完成全量审计**
+- 状态：**P0、P1、P2、P3 已实现；2026-08-01 全量文档一致性审计已完成**
 - 开始日期：2026-07-29
 - 讨论的实现基线：Git 提交 `14a8985`（`feat: add external agent collaboration skill`）
 - 当前跟踪提交：以 Git `main` 和下列主文档为准，不以本专题中的旧方案文本推断当前实现

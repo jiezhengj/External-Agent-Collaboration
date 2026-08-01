@@ -13,7 +13,7 @@ Claude Code 是 provider 内的 harness，而不是 Flash/Base/Pro 的跨 provid
 
 Codex 只选择 provider：健康的外部可委派新主题按持久化 cursor 公平轮换；用户指定和健康的精确 session 优先。runner 不传 `--model`，由每份隔离的 CC Switch/Claude Code profile 决定内部模型 alias。provider health 仅记录 failure kind、次数与 retry time；只对可识别的 availability failure 冷却并最多跨 provider 调用一次。
 
-Claude Code 内部子代理不作为 Codex 的独立路由、脱敏、探测或周期验证目标。外部调用前的最小非敏感 handoff 是本架构的 egress 边界；真实外发还要求 `trusted-providers.local.json` 中存在与当前非密钥 profile 指纹相符的用户批准记录。
+Claude Code 内部子代理不作为 Codex 的独立路由、脱敏、探测或周期验证目标。外部调用前的最小非敏感 handoff 是本架构的 egress 边界；真实外发还要求 `trusted-providers.local.json` 中存在与当前非密钥 profile 指纹相符的本地 trust record。维护者已授权的实施自动建立或刷新该非密钥记录。
 
 ## 备选方案
 

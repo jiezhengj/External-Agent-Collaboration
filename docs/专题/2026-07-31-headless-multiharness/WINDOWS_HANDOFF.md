@@ -2,7 +2,7 @@
 
 ## 目标
 
-Windows 真机证据已完成：Claude Code adapter 的全量回归、真实 schema/session smoke，以及 Antigravity P2 fake/live smoke 均已通过。P2 之后仍禁止启动 Antigravity execute 或自动角色路由（P3/P4）。本文件保留为可复跑验收入口。
+Windows 真机证据已完成：Claude Code adapter 的全量回归、真实 schema/session smoke，以及 Antigravity P2 fake/live smoke 均已通过。P3 已在 macOS/Windows 受控实验及 macOS isolated full-auto 实验中失败，因此 AGY 当前固定只读；P4 自动 role router 仍未启动。本文件保留为可复跑验收入口。
 
 Windows Codex 应直接运行本机诊断、测试、fingerprint trust 刷新和无敏感真实 smoke；只有网页登录、MFA/passkey/CAPTCHA、OS 对话框、缺少本机配置或宿主拒绝 CLI 进程时才需要人处理。Git 操作前不得提交或推送 token、`.env`、local profile、outputs、logs 或 snapshots。
 
@@ -76,11 +76,11 @@ py -3 .agents\skills\external-agent-collaboration\scripts\consult_antigravity.py
 
 已将 Windows 结果写入 [迭代记录](../../迭代记录.md)。不得记录 token、完整 stderr、prompt 或 provider 输出。已更新专题入口；P2 已具备双平台证据。
 
-之后才可规划 P3/P4：P3 先定义 Antigravity settings allowlist、可写路径、命令边界、软拒绝与回滚；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
+P3 已完成诊断并被证明不可用：future AGY CLI/agent 更新后只能通过同一 isolated P3 契约重新验证；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
 
-## 6. P3 Windows 实测问题日志（2026-08-01，供 macOS 接手）
+## 6. P3 Windows 实测问题日志（2026-08-01，历史诊断）
 
-**当前结论：P3 尚未通过，不能标记为 complete。** 本节只记录可复现的、脱敏后的诊断信息；未记录 token、原始 prompt、模型全文或 stderr 内容。所有尝试均未使用 `--dangerously-skip-permissions`，且没有产生范围外写入。
+**当前结论：P3 尚未通过，不能标记为 complete。** 本节保留 6.10 之前的可复现、脱敏诊断；未记录 token、原始 prompt、模型全文或 stderr 内容。这里所说的“所有尝试均未使用 `--dangerously-skip-permissions`”只适用于这些早期 controlled-execute 尝试，不包括后续 isolated full-auto 对照。
 
 ### 6.1 已完成的受控执行准备
 
@@ -124,7 +124,7 @@ Windows 上的现象不是已知的 token、profile trust、allow-path 或 works
 
 另有一项独立的 Windows 兼容性修复：Python 适配器使用 `subprocess.run(..., text=True)` 时继承 GBK 解码，曾因 UTF-8 CLI 输出触发 `UnicodeDecodeError`。Claude Code 与 Antigravity 适配器现在显式使用 `encoding="utf-8", errors="replace"`，并增加非 ASCII 输出回归测试。macOS 默认 UTF-8 环境通常不会暴露该问题，仍请保留该显式处理以保证跨平台一致性。
 
-### 6.5 请 macOS 接手时比较的项目
+### 6.5 已完成的 macOS 对照项目（历史）
 
 1. 在 macOS 上确认安装版本和 `agy --help` 中与 headless、`--mode accept-edits`、JSON schema 相关的实际参数；不要仅依赖旧文档。
 2. 对比 macOS 的 Antigravity settings 中工作区信任和 permissions 的实际 JSON 形状，特别是 trusted workspace 是否需要不同字段或规范化路径。
@@ -132,7 +132,7 @@ Windows 上的现象不是已知的 token、profile trust、allow-path 或 works
 4. 若 macOS 成功，请记录 Windows 与 macOS 的 CLI 版本、profile 生效方式、settings 关键字段名与运行模式差异，并据此提出最小 Windows 修复；不要扩大 allowlist。
 5. 若 macOS 同样失败，应将问题归类为 CLI/headless 执行语义或模型工具路由问题，并在官方参考与可观察的初始化/工具可用性信息中继续定位。
 
-### 6.6 macOS 对照的校正与建议（2026-08-01）
+### 6.6 macOS 对照的校正与建议（2026-08-01，已完成）
 
 先校正一个容易造成误判的前提：现有 macOS 的成功证据是 P2 的 `--mode plan`、无工具、只读 schema smoke，**不是** P3 的 `--mode accept-edits` 写入成功。因此它只能证明 macOS 的登录、headless JSON/schema 和只读 conversation 可用，不能作为 Windows P3 “同链路已成功”的对照结论。
 
@@ -170,8 +170,8 @@ macOS 已完成与本节相同边界的真实对照，结果**复现** Windows P
 
 macOS 以 disposable 临时项目运行 full-auto；临时项目只包含 P3 目标文件和脱敏 handoff。run `isolated-1785568585-dfd9fc5d` 的 effective mode 为 `always-proceed`，`write_to_file` 可用、12 次工具调用、没有范围外文件变更，但目标仍未匹配。故障不依赖主工作树、settings 预授权或 Windows。当前 AGY headless 保留 P2 read-only；P3 只能在未来 CLI/agent 更新后以同一实验重新验证。
 
-### 6.9 macOS stream-json 诊断结论（2026-08-01）
+### 6.9 macOS stream-json 诊断结论（2026-08-01，已被 6.10 的 full-auto 实验部分取代）
 
 方案 2 已在 macOS 实测。run `1785566527-4aa04f1d` 的无内容诊断显示：`init.tools` 包含 `write_to_file`，但 effective `permission_mode` 是 `request-review`；共观察到 2 个 `tool` 步骤和 2 个 permission signal，最终 terminal `SUCCESS` 仍被归一化为 `blocked_by_permission`，目标文件没有变更。没有 API retry 或 plugin/MCP failure。
 
-因此根因已收敛为 headless `accept-edits` 没有把写入操作切换到可自动执行的权限策略，而不是 Windows、模型缺少写工具或 runner 没有传 `--mode accept-edits`。下一步只需核对 Antigravity settings 中能把这个**唯一受控路径**的 `write_to_file` 从 request-review 提升为 allow 的精确规则和生效工作区；不得放开 shell、全局路径或危险跳过参数。若该官方设置在 macOS/Windows 都不能使 effective mode 变化，则正式固定 AGY 为 read-only harness，停止 P3。
+这项中间诊断曾把根因暂时收敛为 `accept-edits` 的权限策略。后续 6.10 在 isolated `always-proceed` 下仍未写入目标，已经排除“只差 settings 精确 allow 规则”的解释；不再继续堆积路径 allowlist 或调整 settings。当前有效结论是 AGY 仅保留 P2 read-only，未来只在 CLI/agent 更新后重跑同一 isolated P3 实验。
