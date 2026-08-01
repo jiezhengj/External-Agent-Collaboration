@@ -1,0 +1,3 @@
+# Keep textual working trees byte-stable across macOS and Windows.
+# Binary files remain untouched by Git's automatic text detection.
+* text=auto eol=lf
