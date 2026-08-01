@@ -29,7 +29,10 @@ def choose_harness(
     if matching_sessions:
         harnesses = {str(item.get("harness", CLAUDE_CODE)) for item in matching_sessions}
         if len(harnesses) == 1:
-            return harnesses.pop(), {"basis": "matching_active_session"}
+            harness = harnesses.pop()
+            if harness == ANTIGRAVITY and action not in {"consult", "critique", "continue"}:
+                return CLAUDE_CODE, {"basis": "antigravity_session_action_ineligible"}
+            return harness, {"basis": "matching_active_session"}
         return CLAUDE_CODE, {"basis": "ambiguous_cross_harness_session"}
     normalized = request.lower()
     explicit_independent_review = any(marker in normalized for marker in INDEPENDENT_REVIEW_MARKERS)

@@ -2,16 +2,16 @@
 
 ## 目标
 
-Windows 真机证据已完成：Claude Code adapter 的全量回归、真实 schema/session smoke，以及 Antigravity P2 fake/live smoke 均已通过。P3 已在 macOS/Windows 受控实验及 macOS isolated full-auto 实验中失败，因此 AGY 当前固定只读；P4 自动 role router 仍未启动。本文件保留为可复跑验收入口。
+Windows 真机证据已完成：Claude Code adapter 的全量回归、真实 schema/session smoke、Antigravity P2 fake/live smoke，以及 P4 public role-router smoke 均已通过。P3 已在 macOS/Windows 受控实验及两端 isolated full-auto 实验中失败，因此 AGY 当前固定只读。本文件保留为可复跑验收入口。
 
 Windows Codex 应直接运行本机诊断、测试、fingerprint trust 刷新和无敏感真实 smoke；只有网页登录、MFA/passkey/CAPTCHA、OS 对话框、缺少本机配置或宿主拒绝 CLI 进程时才需要人处理。Git 操作前不得提交或推送 token、`.env`、local profile、outputs、logs 或 snapshots。
 
 ## 已完成基线
 
 - Claude runner 不传顶层 `--model`；DeepSeek/MiMo 的内部模型映射由隔离 CC Switch profile 负责。
-- Claude Code 新主题只在健康 DeepSeek/MiMo 间公平轮换；Antigravity 不参与轮换，也尚未自动路由。
+- Claude Code 新主题只在健康 DeepSeek/MiMo 间公平轮换；`route_harness.py` 只会将明确、无敏感、无历史的只读独立审查自动交给 ready Antigravity，后者不参与轮换。
 - `ClaudeCodeAdapter` 已支持 native `--json-schema`、`structured_output`、精确 `--resume` 与 opt-in `--stream-diagnostics`。
-- `AntigravityAdapter` 只允许 `consult`/`critique` + `--mode plan`，保存 `conversation_id`，不使用 `--dangerously-skip-permissions`。
+- `AntigravityAdapter` 只允许 `consult`/`critique` 与已有 session 的 `continue` + `--mode plan`，保存 `conversation_id`，不使用 `--dangerously-skip-permissions`。
 - macOS 已完成两套真实 smoke。不得复制或恢复 macOS 的 session、trust、capability 或 profile 到 Windows。
 
 背景见 [专题入口](README.md)、[技术方案](../../技术方案文档.md)、[实施计划](../../实施计划文档.md)、[测试用例](../../测试用例文档.md) 与 [迭代记录](../../迭代记录.md)。
@@ -76,7 +76,7 @@ py -3 .agents\skills\external-agent-collaboration\scripts\consult_antigravity.py
 
 已将 Windows 结果写入 [迭代记录](../../迭代记录.md)。不得记录 token、完整 stderr、prompt 或 provider 输出。已更新专题入口；P2 已具备双平台证据。
 
-P3 已完成足以固定产品结论的双平台诊断：未来仅在 AGY CLI/agent 更新后，才可通过同一 isolated P3 契约重新验证；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
+P3 已完成足以固定产品结论的双平台诊断：未来仅在 AGY CLI/agent 更新后，才可通过同一 isolated P3 契约重新验证。P4 已在 Windows 启用为有限的只读 role router，macOS 尚需执行同一 smoke；它永远不会把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
 
 ## 5.1 已完成：Windows isolated full-auto 对照
 
@@ -119,6 +119,14 @@ py -3 .agents\skills\external-agent-collaboration\scripts\execute_antigravity_is
 预期当前版本返回 exit code `3`，并在 ignored `.ai-collaboration\outputs\isolated-*.json` 留下脱敏 record：`target_before` 必须是 `P3 pending`，`tool_diagnostics.permission_mode` 应为 `always-proceed`，`tool_diagnostics.write_tool_available` 为 true，`target_matched` 为 false，`non_target_changed_paths` 为空。随后运行 `git status --short`，确认没有 tracked 项目文件变化；不得提交该运行态 record。
 
 本对照已按预期失败。未来若 AGY CLI/agent 更新后重验意外得到 `target_matched: true`，也**不得**直接启用 AGY execute：记录 Windows CLI 版本、profile fingerprint、record 中的无内容诊断字段和 Git revision，然后在 macOS 用同一 fresh pending source 重现；只有跨平台成功、完整回归和新的 DEC 都成立后才可重新评估 P3。产品结论保持“AGY P2 只读，Claude Code 为唯一自动 execute harness”。
+
+## 5.2 已完成：Windows P4 自动只读角色路由
+
+公共入口现为 `route_harness.py`：它先检查精确 session、用户指定、handoff 敏感性、请求角色和当前 `antigravity_readonly` profile 的 launcher/trust/read-only readiness，再决定调用 Claude Code 或 Antigravity。它绝不把 Antigravity 加进 DeepSeek/MiMo pool，也不会将 execute、draft 或 AGY full-auto profile 路由给 Antigravity。
+
+Windows run `1785589528-4586c0af` 已通过：新主题、无敏感、明确“独立风险审查”的 `critique` 由 public router 自动选择 `harness: antigravity`，并返回 `routing.basis: explicit_independent_review`、`status: completed` 和有效结构化 contract；项目文件无变化。
+
+macOS 已按 [macOS P4 handoff](MACOS_P4_HANDOFF.md) 运行同一 smoke 并通过：`1785590735-1988157e` 返回 `completed`、`explicit_independent_review` 与有效 contract。P4 双平台运行态证据现已齐全；profile/readiness 失败时仍不得静默改作 AGY execute，也不得跨 harness 自动重试。
 
 ## 6. P3 Windows 实测问题日志（2026-08-01，历史诊断）
 

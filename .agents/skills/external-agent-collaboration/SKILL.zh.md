@@ -39,7 +39,11 @@
 
 ## 调用与安全
 
-每个任务首次调用 Claude Code provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。Antigravity 的显式 P2 只读路径还必须运行 `scripts/doctor_harness.py --profile antigravity_readonly --json`，并具备 `trust_harness.py` 的当前指纹记录；`AGENTS.md` 中的持续授权允许直接进行其验收所需的无敏感真实 smoke。它尚不是自动路由候选。`collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。最外层严格匹配的 ` ```json ` fence 会在合约校验前剥离；若结果仍不合约但内容可用，不自动重复同一 consult，而是消费受限结果或按明确路径检查本地 output。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
+每个任务首次调用 Claude Code provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。ready 的 Antigravity P2 只读 profile 还必须通过 `scripts/doctor_harness.py --profile antigravity_readonly --json`，并具备 `trust_harness.py` 的当前指纹记录；`AGENTS.md` 中的持续授权允许在真实调用前直接建立或刷新该非密钥记录。
+
+新外部任务使用 `scripts/route_harness.py`，传入原始请求、handoff 和 action。它先恢复精确 session；否则只在新主题/无历史、无敏感、明确独立审查且为只读 `consult` 或 `critique`、profile ready 时自动选择 Antigravity。其余可委派任务都交给 Claude Code，DeepSeek/MiMo provider 路由仍只在 Claude Code 内运行。Antigravity 未就绪时明确报告并交回 Codex，绝不静默改投 Claude Code。`route_harness.py` 会拒绝 Antigravity 的 `execute`/`draft`、命令、outcomes、fork、full-auto profile 和非标准 response contract；它再调用 `collaborate.py` 或 `consult_antigravity.py`。只有调用方已明确完成路由决策时，才直接调用这两个入口。
+
+`collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。最外层严格匹配的 ` ```json ` fence 会在合约校验前剥离；若结果仍不合约但内容可用，不自动重复同一 consult，而是消费受限结果或按明确路径检查本地 output。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。Claude Code 的 execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
 
 `trusted-providers.local.json` 是第二份 ignored 本地文件：仅当 provider key 的当前 profile 非密钥指纹仍与记录一致时，runner 才会执行外发调用。endpoint、模型映射、配置目录或非密钥 environment 改变都会使记录失效；按维护者的持续授权直接刷新。它是项目内可审计的信任门，不绕过 Codex 宿主平台的最终外发审批。
 

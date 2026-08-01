@@ -2,7 +2,7 @@
 
 ## Status
 
-WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged; Antigravity has no automatic routing. P3 diagnostics also completed: macOS/Windows controlled experiments and disposable full-auto experiments on both platforms exposed the write tool and effective `always-proceed`, yet did not modify the declared target. AGY is therefore fixed to its verified P2 read-only role; automatic project execute remains Claude Code only. P4 candidate policy remains out of scope.
+WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged. P4 now exposes a public role router: a ready Antigravity profile is automatically selected only for a new/no-history, non-sensitive, explicit independent read-only review; its Windows and macOS real automatic smokes both passed. P3 diagnostics also completed: macOS/Windows controlled experiments and disposable full-auto experiments on both platforms exposed the write tool and effective `always-proceed`, yet did not modify the declared target. AGY is therefore fixed to its verified P2 read-only role; automatic project execute remains Claude Code only.
 
 ## Problem and baseline
 
@@ -25,7 +25,7 @@ The project grew from a Claude Code-specific runner. It now needs a deliberate b
 | P1 | Common adapter/state schema and dry-run migration | no cross-harness session, trust, health or capability reuse. |
 | P2 | Antigravity read-only adapter | two-platform fake CLI plus a minimal real smoke for each configured, trusted local profile. |
 | P3 | Antigravity controlled execute | Not admitted: the isolated full-auto experiment did not satisfy its target outcome. Revalidate only after a future CLI/agent update. |
-| P4 | Optional harness candidate policy | user-approved benchmark evidence and explicit DEC. |
+| P4 | Read-only harness role router | Public router, fake tests, and macOS/Windows real automatic smokes are complete. |
 
 ## Current documents
 
@@ -34,3 +34,4 @@ The project grew from a Claude Code-specific runner. It now needs a deliberate b
 - [Implementation plan](../../实施计划文档.md)
 - [Test cases](../../测试用例文档.md)
 - [Windows Codex handoff](WINDOWS_HANDOFF.md)
+- [macOS P4 role-router handoff](MACOS_P4_HANDOFF.md)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit, trusted, read-only Antigravity consultation; never auto-routed."""
+"""Trusted, read-only Antigravity consultation used by the explicit and role-router paths."""
 
 from __future__ import annotations
 
@@ -25,17 +25,20 @@ def antigravity_session(key: str, sessions: list[dict], workdir: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--action", choices=("consult", "critique"), required=True)
+    parser.add_argument("--action", choices=("consult", "critique", "continue"), required=True)
     parser.add_argument("--topic", required=True)
     parser.add_argument("--handoff", required=True)
     parser.add_argument("--profile", default="antigravity_readonly")
     parser.add_argument("--session-key")
     parser.add_argument("--working-directory", default=str(collaborate.PROJECT_ROOT))
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--routing-basis", default="explicit_antigravity_entry")
     args = parser.parse_args()
     try:
         if args.timeout < 1:
             raise collaborate.CollaborationError("--timeout must be positive.")
+        if args.action == "continue" and not args.session_key:
+            raise collaborate.CollaborationError("Antigravity continue requires --session-key.")
         workdir = collaborate.safe_workdir(args.working_directory)
         path = Path(args.handoff).resolve()
         if not path.is_file() or collaborate.is_sensitive(collaborate.relative(path)):
@@ -76,7 +79,7 @@ def main() -> int:
         status = "blocked_by_permission" if permission == "blocked_by_permission" else "completed" if permission == "allowed" and response is not None else "failed"
         run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
         output = collaborate.output_path(run_id, "outputs")
-        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "topic": args.topic, "action": args.action, "permission_state": permission, "result_contract": {"valid": response is not None, "errors": errors}}
+        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "routing": {"basis": args.routing_basis}, "topic": args.topic, "action": args.action, "permission_state": permission, "result_contract": {"valid": response is not None, "errors": errors}}
         collaborate.write_json(output, record)
         conversation_id = result.get("conversation_id")
         if status == "completed" and isinstance(conversation_id, str) and conversation_id:
@@ -88,7 +91,7 @@ def main() -> int:
             topics = collaborate.topics_registry()
             collaborate.register_topic_session(topics, session)
             collaborate.write_json(collaborate.TOPICS_FILE, topics)
-        print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "output_path": str(output.relative_to(collaborate.PROJECT_ROOT)), "result_contract_failed": response is None}, ensure_ascii=False, indent=2))
+        print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "routing": {"basis": args.routing_basis}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT)), "result_contract_failed": response is None}, ensure_ascii=False, indent=2))
         return 0 if status == "completed" else 3
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
         print(str(exc))

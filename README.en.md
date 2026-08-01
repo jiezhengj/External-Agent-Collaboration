@@ -4,7 +4,7 @@
 
 ## Purpose
 
-This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex through a local headless CLI harness. Claude Code is the implemented project-collaborator harness today; Antigravity has a separately gated, explicit read-only adapter that is not yet auto-routed. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
+This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex through a local headless CLI harness. Claude Code is the implemented project-collaborator harness today; Antigravity has a separately gated, read-only adapter that is automatically selected only for a new, non-sensitive, explicitly requested independent review. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
 
 The project exists because a simple one-off model call is not enough for longer local work. A useful collaboration setup needs to keep providers and sessions separate, retain project context, constrain file edits, and verify what actually changed.
 

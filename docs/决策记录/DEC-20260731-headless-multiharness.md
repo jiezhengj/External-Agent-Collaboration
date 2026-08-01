@@ -34,6 +34,7 @@
 - P0、P1、P2 均已取得 macOS 与 Windows 证据；Antigravity 的已验证自动角色是 P2 只读独立评审。
 - P3 的主工作树受控实验及 macOS/Windows disposable full-auto 实验均未满足唯一目标文件的写入 outcome；两端 full-auto 对照均证明 `write_to_file` 可用且 effective mode 为 `always-proceed`，因此不再归因于 Windows 或 settings allowlist。
 - 在新的 CLI/agent 版本以同一 isolated P3 契约取得成功证据前，Antigravity 不进入 execute 路由；Claude Code 是唯一自动项目 execute harness。
+- P4 已完成有限的自动只读 role router 与 macOS/Windows smoke：只有新主题、无敏感、明确独立审查且 profile ready 时选择 Antigravity；未就绪、非标准 contract、execute/draft 或跨 harness 歧义均明确拒绝或交回 Codex，不静默替代。
 
 ## 受影响文档与证据
 
