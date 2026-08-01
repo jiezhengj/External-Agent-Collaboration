@@ -37,7 +37,7 @@
 |主题/会话登记|记录主题绑定、fork、活动/归档状态和产物引用。|
 |独立审查器|请求与执行者不同的 provider 进行一次受限 critique。|
 |指标记录器|保存路由元数据，不保存提示词、token 或文件正文。|
-|Harness adapter（规划）|归一化每种 CLI 的调用、会话标识、权限拒绝、输出与失败语义，不混淆不同 harness。|
+|Harness adapter|归一化每种 CLI 的调用、会话标识、权限拒绝、输出与失败语义，不混淆不同 harness。|
 
 ## Headless CLI 参考基线与路线图
 
