@@ -840,6 +840,7 @@ def main() -> int:
     parser.add_argument("--response-contract", choices=RESPONSE_CONTRACT_MODES, default="standard", help="Use none only for a bounded read-only exact-response smoke check.")
     parser.add_argument("--expected-response", help="Exact trimmed text required when --response-contract none is used for a smoke check.")
     parser.add_argument("--stream-diagnostics", action="store_true", help="Opt in to content-free stream-json lifecycle diagnostics; final result handling remains structured.")
+    parser.add_argument("--harness-routing-basis", help=argparse.SUPPRESS)
     parser.add_argument("--topic-goal", help="Short durable goal for the one-page topic state; never include secrets or a full handoff.")
     parser.add_argument("--stop-rule", help="Short durable stop rule for the one-page topic state.")
     args = parser.parse_args()
@@ -848,7 +849,7 @@ def main() -> int:
     action_modes = {"consult": "analyze", "continue": "analyze", "draft": "draft", "critique": "critique", "execute": "execute"}
     task_type = args.task_type or "planning"
     mode = args.mode or action_modes[args.action]
-    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode, "response_contract": args.response_contract, "harness_state_feature": state_feature_enabled()}
+    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode, "response_contract": args.response_contract, "harness_state_feature": state_feature_enabled(), "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}}
     try:
         if args.timeout < 1:
             raise CollaborationError("--timeout must be positive.")
@@ -1048,7 +1049,7 @@ def main() -> int:
         write_json(METRICS_FILE, metrics)
         output_file = output_path(run_id, "outputs")
         output_rel = str(output_file.relative_to(PROJECT_ROOT))
-        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors}
+        result_record = {"run_id": run_id, "status": status, "provider": provider, "harness": CLAUDE_CODE, "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors}
         if stream_summary is not None:
             result_record["stream_diagnostics"] = stream_summary
         write_json(output_file, result_record)

@@ -2,10 +2,10 @@
 
 ## 路由
 
-1. 用户指定 provider 时使用指定 provider。
-2. 存在完全匹配的 active session 时恢复它。
-3. 新主题在健康且合格的 provider 间使用 `task_type:mode` 的持久化 cursor 公平轮换；`provider_metrics.json` 只记录审计元数据，不在当前 starter policy 中打破平局。
-4. 仅当自动选择的 provider 出现已归类的 billing、authentication、endpoint、rate-limit、transport 或 server 可用性故障时，可故障转移一次；用户明确指定 provider 时不自动替换。任务、契约、outcome、超范围或实现失败不允许切换。
+1. `route_harness.py` 先按精确 session、用户指定、handoff 敏感性、任务角色、当前 profile/trust/launcher readiness 与 workspace/platform identity 选择 harness。
+2. Antigravity 只在新主题/无历史、无敏感、明确独立审查、第二方案、反方意见或风险清单的 read-only `consult`/`critique` 中自动选择；已有 Antigravity session 只能 read-only `continue`。未就绪时报告 `antigravity_not_ready` 并交回 Codex，不得静默改投 Claude Code。
+3. 选定 Claude Code 后，用户指定 provider 优先；否则存在完全匹配的 active session 时恢复它；新主题在健康且合格的 DeepSeek/MiMo provider 间使用 `task_type:mode` 的持久化 cursor 公平轮换，`provider_metrics.json` 只记录审计元数据，不在当前 starter policy 中打破平局。
+4. 仅当自动选择的 Claude Code provider 出现已归类的 billing、authentication、endpoint、rate-limit、transport 或 server 可用性故障时，可故障转移一次；用户明确指定 provider 时不自动替换。任务、契约、outcome、超范围或实现失败不允许切换，也不触发跨 harness 替换。
 
 Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务分类只在选中后决定是否允许实际委派。`.ai-collaboration/provider-health.json` 只保存 failure kind、次数和 retry time，不保存 prompt、文件正文、token、URL query 或原始 stderr。billing/authentication/endpoint/configuration 冷却 24 小时；暂时故障按 5 分钟、15 分钟、1 小时、6 小时递增。无后台探测；到期后由下一次原本允许的调用恢复尝试。
 
@@ -13,7 +13,7 @@ Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务�
 
 Provider token 的默认载体是用户管理、Git 忽略的配置文件。可使用通用 `providers.local.json`，或为 macOS/Windows 分别使用 platform local profile；token 可直接写入对应文件。不得要求 Keychain、Credential Manager 或环境变量，也不得将 token 写入 Git、handoff、输出、日志或外部提示词。
 
-Antigravity 目前只有显式只读路径：先运行 `doctor_harness.py --profile antigravity_readonly --json`，用户完成一次交互登录后，Codex 用 `trust_harness.py --profile antigravity_readonly --approve` 记录非密钥 profile fingerprint，才可由 `consult_antigravity.py` 发起已授权的 consult/critique。它固定 `plan`、不允许 execute、不会自动加入 DeepSeek/MiMo 轮换，也不会使用 `--dangerously-skip-permissions`。诊断明确不验证登录，真实 smoke 才能验证 cached authentication。
+Antigravity 是自动但严格受限的只读独立审查角色：先运行 `doctor_harness.py --profile antigravity_readonly --json`，用户完成一次交互登录后，Codex 用 `trust_harness.py --profile antigravity_readonly --approve` 记录非密钥 profile fingerprint，才可由 `route_harness.py` 自动进入 `consult_antigravity.py`。它固定 `plan`，只接受标准结构化 contract，不允许 execute、draft、命令、outcome、fork 或 `--dangerously-skip-permissions`，不会加入 DeepSeek/MiMo 轮换。诊断明确不验证登录，真实 smoke 才能验证 cached authentication。
 
 ## 参考资料与双平台纪律
 

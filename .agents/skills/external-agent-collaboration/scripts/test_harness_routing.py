@@ -19,6 +19,12 @@ def main() -> None:
     assert selected == ANTIGRAVITY and detail["basis"] == "user_specified_harness"
     selected, detail = choose_harness("second opinion", "execute", False, [], True, ANTIGRAVITY)
     assert selected == CLAUDE_CODE and detail["basis"] == "requested_antigravity_ineligible"
+    selected, detail = choose_harness("continue review", "continue", False, [{"harness": ANTIGRAVITY}], True)
+    assert selected == ANTIGRAVITY and detail["basis"] == "matching_active_session"
+    selected, detail = choose_harness("execute", "execute", False, [{"harness": ANTIGRAVITY}], True)
+    assert selected == CLAUDE_CODE and detail["basis"] == "antigravity_session_action_ineligible"
+    selected, detail = choose_harness("review", "consult", False, [{"harness": ANTIGRAVITY}, {"harness": CLAUDE_CODE}], True)
+    assert selected == CLAUDE_CODE and detail["basis"] == "ambiguous_cross_harness_session"
     print("harness-routing tests passed")
 
 
