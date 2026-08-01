@@ -22,6 +22,8 @@ VALID = {
     "summary": "Completed.", "changed_files": [], "commands_run": [],
     "validation_results": [], "risks": [], "uncertainty": "None.",
 }
+UNICODE_SUMMARY = "\u7f16\u7801\u56de\u5f52"
+UTF8_VALID = {**VALID, "summary": UNICODE_SUMMARY}
 
 
 def main() -> None:
@@ -30,9 +32,9 @@ def main() -> None:
         argv_path = root / "argv.json"
         helper = root / "fake-claude.py"
         helper.write_text(
-            "import json, os, sys\nfrom pathlib import Path\n"
+            "import json, os, sys\nsys.stdout.reconfigure(encoding='utf-8')\nfrom pathlib import Path\n"
             "Path(os.environ['ARGS_FILE']).write_text(json.dumps(sys.argv[1:]))\n"
-            "print(json.dumps({'structured_output': {'summary': 'Completed.', 'changed_files': [], 'commands_run': [], 'validation_results': [], 'risks': [], 'uncertainty': 'None.'}}))\n",
+            "print(json.dumps({'structured_output': {'summary': '\\u7f16\\u7801\\u56de\\u5f52', 'changed_files': [], 'commands_run': [], 'validation_results': [], 'risks': [], 'uncertainty': 'None.'}}, ensure_ascii=False))\n",
             encoding="utf-8",
         )
         if os.name == "nt":
@@ -46,7 +48,7 @@ def main() -> None:
             {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path)}},
             "consult", "test", root, {"session_id": "saved-session"}, False, True, [], 10,
         )
-        assert code == 0 and not stderr
+        assert code == 0 and not stderr and UNICODE_SUMMARY in stdout and "\ufffd" not in stdout
         argv = json.loads(argv_path.read_text(encoding="utf-8"))
         assert "--model" not in argv and "--json-schema" in argv
         schema = json.loads(argv[argv.index("--json-schema") + 1])
@@ -54,7 +56,7 @@ def main() -> None:
         assert argv[argv.index("--resume") + 1] == "saved-session" and "--fork-session" in argv
         outer = collaborate.parse_result(stdout)
         response, errors = collaborate.parse_response_contract(outer)
-        assert response == VALID and errors == []
+        assert response == UTF8_VALID and errors == []
         code, _stdout, stderr = collaborate.invoke(
             {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path)}},
             "consult", "test", root, None, True, False, [], 10, True,

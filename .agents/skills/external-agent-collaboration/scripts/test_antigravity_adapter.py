@@ -13,6 +13,7 @@ from antigravity_adapter import AntigravityAdapter, AntigravityInvocation
 
 
 SCHEMA = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"], "additionalProperties": False}
+UNICODE_SUMMARY = "\u7f16\u7801\u56de\u5f52"
 
 
 def main() -> None:
@@ -22,9 +23,9 @@ def main() -> None:
         argv_path = root / "argv.json"
         helper = root / "fake-agy.py"
         helper.write_text(
-            "import json, os, sys\nfrom pathlib import Path\n"
+            "import json, os, sys\nsys.stdout.reconfigure(encoding='utf-8')\nfrom pathlib import Path\n"
             "Path(os.environ['ARGS_FILE']).write_text(json.dumps(sys.argv[1:]))\n"
-            "print(json.dumps({'conversation_id': 'agy-conversation', 'status': 'SUCCESS', 'response': '{\\\"summary\\\":\\\"ok\\\"}', 'structured_output': {'summary': 'ok'}}))\n",
+            "print(json.dumps({'conversation_id': 'agy-conversation', 'status': 'SUCCESS', 'response': '{\\\"summary\\\":\\\"\\u7f16\\u7801\\u56de\\u5f52\\\"}', 'structured_output': {'summary': '\\u7f16\\u7801\\u56de\\u5f52'}}, ensure_ascii=False))\n",
             encoding="utf-8",
         )
         if os.name == "nt":
@@ -39,13 +40,13 @@ def main() -> None:
             timeout=10, response_schema=SCHEMA, profile={"mode": "plan"}, conversation_id="previous-conversation",
         )
         code, stdout, stderr = adapter.invoke(request)
-        assert code == 0 and not stderr
+        assert code == 0 and not stderr and UNICODE_SUMMARY in stdout and "\ufffd" not in stdout
         argv = json.loads(argv_path.read_text(encoding="utf-8"))
         assert "--dangerously-skip-permissions" not in argv and argv[argv.index("--mode") + 1] == "plan"
         assert argv[argv.index("--conversation") + 1] == "previous-conversation"
         assert json.loads(argv[argv.index("--json-schema") + 1]) == SCHEMA
         result = adapter.parse_outer_result(stdout)
-        assert adapter.structured_output(result) == {"summary": "ok"}
+        assert adapter.structured_output(result) == {"summary": UNICODE_SUMMARY}
         assert adapter.resume_id({"external_session_id": "agy-conversation"}) == "agy-conversation"
         assert adapter.permission_state(result) == "allowed"
     assert adapter.permission_state({"status": "SUCCESS", "error": "permission denied for run_command"}) == "blocked_by_permission"
@@ -60,12 +61,8 @@ def main() -> None:
     streamed, diagnostics = adapter.parse_stream_result(stream)
     assert streamed["conversation_id"] == "stream-conversation" and diagnostics["startup_observed"]
     assert diagnostics["terminal_status"] == "SUCCESS" and "do-not-store-this-model-text" not in json.dumps(diagnostics)
-    try:
-        adapter.command(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "accept-edits"}))
-    except Exception as exc:
-        assert "mode=plan" in str(exc)
-    else:
-        raise AssertionError("read-only adapter must reject execute-capable mode")
+    execute_argv = adapter.command(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "accept-edits"}))
+    assert execute_argv[execute_argv.index("--mode") + 1] == "accept-edits"
     print("antigravity-adapter tests passed")
 
 

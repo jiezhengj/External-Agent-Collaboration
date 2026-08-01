@@ -92,7 +92,7 @@ class ClaudeCodeAdapter:
         try:
             completed = subprocess.run(
                 self.command(request), cwd=request.workdir, env=environment,
-                capture_output=True, text=True, timeout=request.timeout,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=request.timeout,
             )
         except subprocess.TimeoutExpired as exc:
             return 124, exc.stdout or "", f"Timed out after {request.timeout}s"

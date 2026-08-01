@@ -19,6 +19,9 @@ def main() -> None:
         assert loaded["readonly"] == profile and not profiles.trusted(root, "readonly", profile)
         (root / "trusted-harnesses.local.json").write_text(json.dumps({"schema_version": 1, "profiles": {"readonly": {"approved": True, "profile_fingerprint": profiles.profile_fingerprint(profile)}}}), encoding="utf-8")
         assert profiles.trusted(root, "readonly", profile)
+        execute = {"harness": "antigravity", "launcher": "agy", "mode": "accept-edits", "execution_scope": {"allowed_paths": ["docs/p3-smoke"], "allowed_commands": []}}
+        (root / "harness-profiles.local.json").write_text(json.dumps({"profiles": {"execute": execute}}), encoding="utf-8")
+        assert profiles.load_profiles(root)["execute"] == execute
         (root / "harness-profiles.local.json").write_text(json.dumps({"profiles": {"bad": {"harness": "antigravity", "mode": "plan", "api_token": "not-allowed"}}}), encoding="utf-8")
         try:
             profiles.load_profiles(root)

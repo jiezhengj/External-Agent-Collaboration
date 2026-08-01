@@ -77,3 +77,57 @@ py -3 .agents\skills\external-agent-collaboration\scripts\consult_antigravity.py
 已将 Windows 结果写入 [迭代记录](../../迭代记录.md)。不得记录 token、完整 stderr、prompt 或 provider 输出。已更新专题入口；P2 已具备双平台证据。
 
 之后才可规划 P3/P4：P3 先定义 Antigravity settings allowlist、可写路径、命令边界、软拒绝与回滚；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
+
+## 6. P3 Windows 实测问题日志（2026-08-01，供 macOS 接手）
+
+**当前结论：P3 尚未通过，不能标记为 complete。** 本节只记录可复现的、脱敏后的诊断信息；未记录 token、原始 prompt、模型全文或 stderr 内容。所有尝试均未使用 `--dangerously-skip-permissions`，且没有产生范围外写入。
+
+### 6.1 已完成的受控执行准备
+
+- 新增独立的本地 profile `antigravity_execute`：`mode` 为 `accept-edits`，执行范围只允许 `docs/专题/2026-07-31-headless-multiharness/p3-smoke/`，允许命令列表为空。
+- `harness_profile_support.py` 已要求 `accept-edits` profile 必须同时声明非空的 `allowed_paths` 与 `allowed_commands`；`antigravity_adapter.py` 已按 profile 传递 `--mode accept-edits`。
+- 新增 `execute_antigravity.py` 受控执行器：执行前建检查点与清单，执行后检查变更路径和预期结果；违反范围、响应无效或结果不符合预期时恢复变更。
+- 本地 trust record 已为 `antigravity_execute` 刷新；`doctor_harness.py --profile antigravity_execute --json` 返回 `ok: true` 且 `profile_trusted: true`。
+- Windows 的 Antigravity CLI 设置中只加入了 P3 目标目录的单条文件写入 allow 规则，没有加入 shell 权限或跳过权限规则。随后补入当前项目工作区的 trusted-workspace 记录。
+
+### 6.2 受控 smoke 的预期
+
+受控 smoke 唯一允许创建/覆盖的目标为：
+
+`docs/专题/2026-07-31-headless-multiharness/p3-smoke/accepted.md`
+
+其预期文件内容为：
+
+```text
+P3 controlled execute accepted
+```
+
+执行器同时要求结构化响应满足既有 schema。任何非目标变更、目标文件内容不匹配或结构化响应无效都会触发失败处理；验证到的范围外变更会被恢复。
+
+### 6.3 Windows 运行时间线
+
+| 次序 | 运行标识/方式 | 可观察结果 |
+| --- | --- | --- |
+| 1 | 前台运行，45 秒外层超时 | 外层退出码 `124`（transport/等待超时）；目标文件不存在。此时未获得可记录的运行结果。 |
+| 2 | `1785563318-acc61f23` | 执行器记录 `status: failed`；`permission_state: allowed`；结构化响应有效；`changed_files: []`；预期文件比对为 false。 |
+| 3 | 加强“必须使用文件写入工具、仅文本回复即失败”的同一 smoke，前台 55 秒 | 外层退出码 `124`；目标文件仍不存在。 |
+| 4 | `1785564168-bca55b00`，隐藏后台、180 秒上限 | 完成但失败；目标文件未创建。使用后台方式只是绕过宿主对单次前台等待时长的限制，不改变 CLI 参数或权限范围。 |
+| 5 | `1785564377-4ec91dc7`，补入 trusted workspace 后的隐藏后台复测 | 完成但失败；目标文件仍未创建。`permission_state` 仍为 `allowed`，未观察到范围外文件。 |
+
+所有后台尝试的 stderr 文件长度为 0；为避免记录敏感或无关模型内容，未持久化原始 stdout/stderr 或模型回复，仅保存执行器的受限状态摘要。
+
+### 6.4 目前的故障判断
+
+Windows 上的现象不是已知的 token、profile trust、allow-path 或 workspace trust 拒绝：profile doctor 通过，受控路径 allow 规则存在，workspace 已由未信任修正为信任，执行器也收到 `permission_state: allowed` 和有效结构化回复。
+
+但 `agy` headless 调用在 `accept-edits` 下始终没有实际调用文件写入能力，导致零文件变更、预期结果失败。现有证据不足以断定是 Windows CLI/model 的工具可用性、headless 模式语义，还是 settings 字段/工作区信任的精确格式差异；P3 应保持阻塞状态，不能通过放宽为全局权限或使用危险跳过参数来掩盖问题。
+
+另有一项独立的 Windows 兼容性修复：Python 适配器使用 `subprocess.run(..., text=True)` 时继承 GBK 解码，曾因 UTF-8 CLI 输出触发 `UnicodeDecodeError`。Claude Code 与 Antigravity 适配器现在显式使用 `encoding="utf-8", errors="replace"`，并增加非 ASCII 输出回归测试。macOS 默认 UTF-8 环境通常不会暴露该问题，仍请保留该显式处理以保证跨平台一致性。
+
+### 6.5 请 macOS 接手时比较的项目
+
+1. 在 macOS 上确认安装版本和 `agy --help` 中与 headless、`--mode accept-edits`、JSON schema 相关的实际参数；不要仅依赖旧文档。
+2. 对比 macOS 的 Antigravity settings 中工作区信任和 permissions 的实际 JSON 形状，特别是 trusted workspace 是否需要不同字段或规范化路径。
+3. 用本节完全相同的单文件、无 shell、无危险跳过 smoke 运行一次，并只记录：是否调用写入工具、最终目标文件是否匹配、范围外变更数、结构化响应是否有效和权限状态。
+4. 若 macOS 成功，请记录 Windows 与 macOS 的 CLI 版本、profile 生效方式、settings 关键字段名与运行模式差异，并据此提出最小 Windows 修复；不要扩大 allowlist。
+5. 若 macOS 同样失败，应将问题归类为 CLI/headless 执行语义或模型工具路由问题，并在官方参考与可观察的初始化/工具可用性信息中继续定位。

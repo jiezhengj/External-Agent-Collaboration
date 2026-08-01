@@ -37,8 +37,19 @@ def load_profiles(control_root: Path) -> dict[str, dict[str, Any]]:
             raise HarnessProfileError("Each harness profile must have a string name and object value.")
         if profile.get("harness") != "antigravity":
             raise HarnessProfileError(f"Harness profile '{name}' must declare harness=antigravity.")
-        if profile.get("mode", "plan") != "plan":
-            raise HarnessProfileError(f"Harness profile '{name}' must fix mode=plan for P2 read-only use.")
+        mode = profile.get("mode", "plan")
+        if mode not in {"plan", "accept-edits"}:
+            raise HarnessProfileError(f"Harness profile '{name}' mode must be plan or accept-edits.")
+        if mode == "accept-edits":
+            scope = profile.get("execution_scope")
+            if not isinstance(scope, dict):
+                raise HarnessProfileError(f"Harness profile '{name}' accept-edits mode requires execution_scope.")
+            paths = scope.get("allowed_paths")
+            commands = scope.get("allowed_commands")
+            if not isinstance(paths, list) or not paths or not all(isinstance(item, str) and item and not Path(item).is_absolute() and ".." not in Path(item).parts for item in paths):
+                raise HarnessProfileError(f"Harness profile '{name}' execution_scope.allowed_paths must be non-empty safe relative paths.")
+            if not isinstance(commands, list) or not all(isinstance(item, str) and item and "\n" not in item for item in commands):
+                raise HarnessProfileError(f"Harness profile '{name}' execution_scope.allowed_commands must be a string list.")
         if any(marker in key.upper() for key in profile for marker in ("TOKEN", "SECRET", "PASSWORD", "KEY")):
             raise HarnessProfileError(f"Harness profile '{name}' must not contain credentials; Antigravity uses its interactive cached login.")
         launcher = profile.get("launcher", "agy")

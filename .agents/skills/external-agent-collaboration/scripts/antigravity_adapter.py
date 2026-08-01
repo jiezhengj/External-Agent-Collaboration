@@ -32,7 +32,7 @@ class AntigravityAdapter:
     """Owns `agy` conversation, terminal-status, and soft-permission semantics."""
 
     name = "antigravity"
-    READ_ONLY_ACTIONS = {"consult", "critique"}
+    MODES = {"plan", "accept-edits"}
     TERMINAL_SUCCESS = "SUCCESS"
 
     @staticmethod
@@ -40,15 +40,15 @@ class AntigravityAdapter:
         problems: list[str] = []
         if not isinstance(profile.get("launcher", "agy"), str) or not str(profile.get("launcher", "agy")):
             problems.append("Antigravity profile has no launcher.")
-        if profile.get("mode", "plan") != "plan":
-            problems.append("Read-only Antigravity adapter requires fixed mode=plan.")
+        if profile.get("mode", "plan") not in AntigravityAdapter.MODES:
+            problems.append("Antigravity profile mode must be plan or accept-edits.")
         return problems
 
     def command(self, request: AntigravityInvocation) -> list[str]:
         problems = self.doctor(request.profile)
         if problems:
             raise AntigravityAdapterError("; ".join(problems))
-        command = [request.launcher, "-p", request.prompt, "--output-format", "json", "--json-schema", json.dumps(request.response_schema, ensure_ascii=False, separators=(",", ":")), "--mode", "plan"]
+        command = [request.launcher, "-p", request.prompt, "--output-format", "json", "--json-schema", json.dumps(request.response_schema, ensure_ascii=False, separators=(",", ":")), "--mode", str(request.profile.get("mode", "plan"))]
         for field, flag in (("model", "--model"), ("effort", "--effort"), ("agent", "--agent")):
             value = request.profile.get(field)
             if isinstance(value, str) and value:
@@ -61,7 +61,7 @@ class AntigravityAdapter:
 
     def invoke(self, request: AntigravityInvocation) -> tuple[int, str, str]:
         try:
-            completed = subprocess.run(self.command(request), cwd=request.workdir, env=request.environment, capture_output=True, text=True, timeout=request.timeout)
+            completed = subprocess.run(self.command(request), cwd=request.workdir, env=request.environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=request.timeout)
         except subprocess.TimeoutExpired as exc:
             return 124, exc.stdout or "", f"Timed out after {request.timeout}s"
         return completed.returncode, completed.stdout, completed.stderr
