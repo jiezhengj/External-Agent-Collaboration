@@ -48,6 +48,7 @@ SENSITIVE_NAMES = {".env", "id_rsa", "id_ed25519"}
 CONTROL_PARTS = {".ai-collaboration", ".git"}
 MAX_SNAPSHOT_BYTES = 500 * 1024 * 1024
 RETURN_MODES = ("compact", "structured", "file_only", "debug")
+RESPONSE_CONTRACT_MODES = ("standard", "none")
 COMPACT_RETURN_BYTES = 8 * 1024
 STRUCTURED_RETURN_BYTES = 16 * 1024
 TOPIC_STATE_MAX_CHARS = 4096
@@ -384,9 +385,11 @@ def output_path(run_id: str, suffix: str) -> Path:
     return CONTROL_ROOT / suffix / f"{run_id}.json"
 
 
-def response_contract_instruction(return_mode: str) -> str:
+def response_contract_instruction(return_mode: str, response_contract: str) -> str:
+    if response_contract == "none":
+        return "No JSON response contract is active for this controlled exact-response check. Follow the handoff's required response exactly; do not add explanation, Markdown, or a JSON envelope."
     if return_mode == "debug":
-        return "The caller is in explicit debug mode and retains the outer CLI envelope, but your response must still satisfy this schema: " + response_contract_instruction("compact")
+        return "The caller is in explicit debug mode and retains the outer CLI envelope, but your response must still satisfy this schema: " + response_contract_instruction("compact", "standard")
     return """Return exactly one JSON object and no Markdown fence. Its required keys are:
 summary (string, at most 4096 characters), changed_files (array of at most 40 short paths),
 commands_run (array of at most 20 short commands), validation_results (array of at most 20 short results),
@@ -394,7 +397,7 @@ risks (array of at most 20 short items), and uncertainty (short string). Do not 
 This response contract is separate from machine expected outcomes; never claim an outcome passed unless you ran it."""
 
 
-def build_prompt(action: str, topic: str, handoff: str, allow_paths: list[Path], commands: list[str], return_mode: str) -> str:
+def build_prompt(action: str, topic: str, handoff: str, allow_paths: list[Path], commands: list[str], return_mode: str, response_contract: str = "standard") -> str:
     operation = "You may edit files only in the allowed paths." if action == "execute" else "Do not edit files; return your work in the final response."
     return f"""You are a persistent external collaborator for the topic: {topic}.
 Action: {action}.
@@ -405,7 +408,7 @@ Never read secrets, commit, push, deploy, publish, rewrite Git history, install 
 Complete only this handoff. Report files changed, commands run, validation results, remaining risks, and uncertainty.
 
 Response contract:
-{response_contract_instruction(return_mode)}
+{response_contract_instruction(return_mode, response_contract)}
 
 Handoff:
 {handoff}
@@ -416,7 +419,7 @@ def initial_toolset(action: str, commands: list[str]) -> list[str]:
     return CLAUDE_ADAPTER.capabilities(action, commands)
 
 
-def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, session: dict[str, Any] | None, ephemeral: bool, fork_session: bool, commands: list[str], timeout: int, stream_diagnostics: bool = False) -> tuple[int, str, str]:
+def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, session: dict[str, Any] | None, ephemeral: bool, fork_session: bool, commands: list[str], timeout: int, stream_diagnostics: bool = False, response_contract: str = "standard") -> tuple[int, str, str]:
     launcher = str(profile.get("launcher", "claude"))
     tools = initial_toolset(action, commands)
     allowed_tools = tools.copy()
@@ -428,7 +431,7 @@ def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, ses
         environment=provider_environment(profile), tools=tools, allowed_tools=allowed_tools, disallowed_tools=[], timeout=timeout,
         session_id=CLAUDE_ADAPTER.resume_id(session) if session and not ephemeral else None,
         ephemeral=ephemeral, fork_session=fork_session,
-        response_schema=RESPONSE_CONTRACT_SCHEMA,
+        response_schema=RESPONSE_CONTRACT_SCHEMA if response_contract == "standard" else None,
         stream_diagnostics=stream_diagnostics,
     ))
 
@@ -643,7 +646,9 @@ def has_permission_denial(result: dict[str, Any]) -> bool:
     return bool(result.get("permission_denials"))
 
 
-def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+def parse_response_contract(result: dict[str, Any], response_contract: str = "standard") -> tuple[dict[str, Any] | None, list[str]]:
+    if response_contract == "none":
+        return None, []
     try:
         value, source = CLAUDE_ADAPTER.structured_output(result)
     except ClaudeCodeAdapterError as exc:
@@ -663,6 +668,18 @@ def parse_response_contract(result: dict[str, Any]) -> tuple[dict[str, Any] | No
     if errors:
         return None, errors[:12]
     return value, []
+
+
+def exact_response_errors(result: dict[str, Any], expected: str | None) -> list[str]:
+    """Validate explicit smoke text without conflating it with the JSON contract."""
+    if expected is None:
+        return []
+    raw = result.get("result")
+    if not isinstance(raw, str):
+        return ["result is not a text response for --expected-response"]
+    if raw.strip() != expected:
+        return ["result did not match --expected-response exactly"]
+    return []
 
 
 def compact_outcomes(outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -692,7 +709,7 @@ def return_payload(return_mode: str, record: dict[str, Any], output_rel: str, re
         "run_id": record["run_id"], "status": record["status"], "provider": record["provider"],
         "action": record["action"], "task_type": record["task_type"], "mode": record["mode"],
         "topic": record["topic"], "routing": record["routing"], "provider_health": record.get("provider_health"), "output_path": output_rel,
-        "result_contract_failed": bool(contract_errors),
+        "result_contract_failed": bool(contract_errors), "response_acceptance_failed": bool(record.get("response_acceptance_errors")),
     }
     if return_mode == "debug":
         return record
@@ -710,6 +727,8 @@ def return_payload(return_mode: str, record: dict[str, Any], output_rel: str, re
     }
     if contract_errors:
         payload["result_contract_errors"] = [one_line(item, 240) for item in contract_errors[:12]]
+    if record.get("response_acceptance_errors"):
+        payload["response_acceptance_errors"] = [one_line(str(item), 240) for item in record["response_acceptance_errors"][:12]]
     return bounded_payload(payload, COMPACT_RETURN_BYTES)
 
 
@@ -818,6 +837,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--ephemeral", action="store_true")
     parser.add_argument("--return-mode", choices=RETURN_MODES, default="compact", help="stdout shape; full CLI JSON always remains in local outputs.")
+    parser.add_argument("--response-contract", choices=RESPONSE_CONTRACT_MODES, default="standard", help="Use none only for a bounded read-only exact-response smoke check.")
+    parser.add_argument("--expected-response", help="Exact trimmed text required when --response-contract none is used for a smoke check.")
     parser.add_argument("--stream-diagnostics", action="store_true", help="Opt in to content-free stream-json lifecycle diagnostics; final result handling remains structured.")
     parser.add_argument("--topic-goal", help="Short durable goal for the one-page topic state; never include secrets or a full handoff.")
     parser.add_argument("--stop-rule", help="Short durable stop rule for the one-page topic state.")
@@ -827,10 +848,19 @@ def main() -> int:
     action_modes = {"consult": "analyze", "continue": "analyze", "draft": "draft", "critique": "critique", "execute": "execute"}
     task_type = args.task_type or "planning"
     mode = args.mode or action_modes[args.action]
-    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode, "harness_state_feature": state_feature_enabled()}
+    log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode, "response_contract": args.response_contract, "harness_state_feature": state_feature_enabled()}
     try:
         if args.timeout < 1:
             raise CollaborationError("--timeout must be positive.")
+        if args.response_contract == "none":
+            if args.action not in {"consult", "critique"} or not args.ephemeral:
+                raise CollaborationError("--response-contract none is limited to an ephemeral consult or critique smoke check.")
+            if args.return_mode == "structured":
+                raise CollaborationError("--response-contract none cannot use --return-mode structured.")
+            if not isinstance(args.expected_response, str) or not args.expected_response or "\n" in args.expected_response:
+                raise CollaborationError("--response-contract none requires a non-empty single-line --expected-response.")
+        elif args.expected_response is not None:
+            raise CollaborationError("--expected-response requires --response-contract none.")
         workdir = safe_workdir(args.working_directory)
         handoff_file = Path(args.handoff).resolve()
         handoff_rel = relative(handoff_file)
@@ -926,8 +956,8 @@ def main() -> int:
         if args.action == "execute":
             checkpoint = copy_checkpoint(run_id)
             before = manifest(PROJECT_ROOT)
-        prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode)
-        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout, args.stream_diagnostics)
+        prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode, args.response_contract)
+        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout, args.stream_diagnostics, args.response_contract)
         log.update({"exit_code": exit_code, "stderr": one_line(stderr, 1200)})
 
         if exit_code != 0:
@@ -946,7 +976,7 @@ def main() -> int:
             failed_provider = provider
             provider, profile, route = fallback
             session = None
-            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, args.timeout, args.stream_diagnostics)
+            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, args.timeout, args.stream_diagnostics, args.response_contract)
             log.update({"provider_failover": {"from": failed_provider, "to": provider, "failure_kind": failure_kind}, "exit_code": exit_code, "stderr": one_line(stderr, 1200)})
             if exit_code != 0:
                 fallback_kind = classify_failure(exit_code, stderr)
@@ -966,6 +996,8 @@ def main() -> int:
             except ClaudeCodeAdapterError as exc:
                 raise CollaborationError(str(exc)) from exc
         permission_denied = has_permission_denial(result)
+        response, contract_errors = parse_response_contract(result, args.response_contract)
+        exact_errors = exact_response_errors(result, args.expected_response)
         changed: list[str] = []
         violations: list[str] = []
         outcome_results: list[dict[str, Any]] = []
@@ -991,7 +1023,7 @@ def main() -> int:
             if checkpoint:
                 restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
             status = "blocked_by_permission"
-        elif outcome_failures:
+        elif outcome_failures or exact_errors:
             if checkpoint:
                 restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
             status = "failed"
@@ -1014,10 +1046,9 @@ def main() -> int:
             "rework_count": 0, "route_basis": route.get("basis"),
         })
         write_json(METRICS_FILE, metrics)
-        response, contract_errors = parse_response_contract(result)
         output_file = output_path(run_id, "outputs")
         output_rel = str(output_file.relative_to(PROJECT_ROOT))
-        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"valid": response is not None, "errors": contract_errors}}
+        result_record = {"run_id": run_id, "status": status, "provider": provider, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors}
         if stream_summary is not None:
             result_record["stream_diagnostics"] = stream_summary
         write_json(output_file, result_record)

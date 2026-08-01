@@ -2,7 +2,7 @@
 
 ## 目标
 
-完成当前必须在 Windows 真机取得的证据：Claude Code adapter 的 Windows 回归与真实 schema/session smoke，以及 Antigravity P2 的 Windows fake/live smoke。P2 完成前，禁止启动 Antigravity execute 或自动角色路由（P3/P4）。
+Windows 真机证据已完成：Claude Code adapter 的全量回归、真实 schema/session smoke，以及 Antigravity P2 fake/live smoke 均已通过。P2 之后仍禁止启动 Antigravity execute 或自动角色路由（P3/P4）。本文件保留为可复跑验收入口。
 
 Windows Codex 应直接运行本机诊断、测试、fingerprint trust 刷新和无敏感真实 smoke；只有网页登录、MFA/passkey/CAPTCHA、OS 对话框、缺少本机配置或宿主拒绝 CLI 进程时才需要人处理。Git 操作前不得提交或推送 token、`.env`、local profile、outputs、logs 或 snapshots。
 
@@ -44,7 +44,7 @@ py -3 -m py_compile .agents\skills\external-agent-collaboration\scripts\stream_d
 git diff --check
 ```
 
-验收：全部测试与编译通过，`git diff --check` 无输出。若 `.cmd` fake launcher、路径、编码或 platform/session isolation 失败，修复并补回归，不能以 macOS 成功替代 Windows 证据。
+已验收：Windows 全量回归通过（23 项）。若 `.cmd` fake launcher、路径、编码或 platform/session isolation 后续失败，修复并补回归，不能以 macOS 成功替代 Windows 证据。
 
 ## 3. Claude Code 真实 schema + resume smoke
 
@@ -52,7 +52,7 @@ git diff --check
 py -3 .agents\skills\external-agent-collaboration\scripts\collaborate.py --action consult --provider deepseek --topic windows-claude-code-schema-smoke --handoff docs\专题\2026-07-31-headless-multiharness\windows-claude-schema-smoke.md --working-directory . --timeout 180 --return-mode structured --stream-diagnostics --task-type planning --mode analyze --topic-goal 'Verify Windows Claude Code stream schema output without project access.' --stop-rule 'Complete Windows schema and session-resume smoke.'
 ```
 
-验收：`status: completed`、`result_contract_failed: false`，有完整 response contract，且项目文件无变更。然后只恢复刚创建的 Windows session：
+已验收：首次调用为 `status: completed`、`result_contract_failed: false`，有完整 response contract 且项目文件无变更；恢复调用的 route basis 为 `explicit_session_key`。如需重跑，再只恢复刚创建的 Windows session：
 
 ```powershell
 $session = (Get-Content .ai-collaboration\sessions.json -Raw | ConvertFrom-Json).sessions | Where-Object { $_.topic -eq 'windows-claude-code-schema-smoke' -and $_.harness -eq 'claude_code' -and $_.status -eq 'active' } | Select-Object -Last 1
@@ -70,10 +70,10 @@ py -3 .agents\skills\external-agent-collaboration\scripts\trust_harness.py --pro
 py -3 .agents\skills\external-agent-collaboration\scripts\consult_antigravity.py --action consult --topic windows-antigravity-p2-smoke --handoff docs\专题\2026-07-31-headless-multiharness\windows-antigravity-p2-smoke.md --profile antigravity_readonly --working-directory . --timeout 180
 ```
 
-验收：`status: completed`、`harness: antigravity`、`result_contract_failed: false`，注册独立 conversation/session，且项目文件无变更。若 `agy` 无法写用户日志或绑定 localhost，记录为宿主运行态问题；不得使用 `--dangerously-skip-permissions`，也不得伪装为认证/schema 成功。
+已验收：`status: completed`、`harness: antigravity`、`result_contract_failed: false`，已注册独立 conversation/session，且项目文件无变更。若 `agy` 后续无法写用户日志或绑定 localhost，记录为宿主运行态问题；不得使用 `--dangerously-skip-permissions`，也不得伪装为认证/schema 成功。
 
 ## 5. 收口
 
-将命令、版本、通过/失败和必要修复写入 [迭代记录](../../迭代记录.md)，不得记录 token、完整 stderr、prompt 或 provider 输出。更新专题入口、实施计划和测试用例，只有第 2–4 节都具备 Windows 证据才可将 P2 标记为双平台完成。
+已将 Windows 结果写入 [迭代记录](../../迭代记录.md)。不得记录 token、完整 stderr、prompt 或 provider 输出。已更新专题入口；P2 已具备双平台证据。
 
 之后才可规划 P3/P4：P3 先定义 Antigravity settings allowlist、可写路径、命令边界、软拒绝与回滚；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。

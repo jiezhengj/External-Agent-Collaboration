@@ -36,6 +36,17 @@ def main() -> None:
     assert not collaborate.has_permission_denial({"permission_denials": []})
     fenced_response, fenced_errors = collaborate.parse_response_contract({"result": "```json\n" + json.dumps(valid) + "\n```"})
     assert fenced_errors == [] and fenced_response == valid
+    smoke_prompt = collaborate.build_prompt("consult", "smoke", "Reply with exactly: provider smoke accepted", [], [], "compact", "none")
+    assert "No JSON response contract is active" in smoke_prompt
+    assert "Return exactly one JSON object" not in smoke_prompt
+    no_contract_response, no_contract_errors = collaborate.parse_response_contract({"result": "provider smoke accepted"}, "none")
+    assert no_contract_response is None and no_contract_errors == []
+    assert collaborate.exact_response_errors({"result": "provider smoke accepted\n"}, "provider smoke accepted") == []
+    assert collaborate.exact_response_errors({"result": "provider smoke accepted\n{}"}, "provider smoke accepted")
+    mismatch = record({"result": "wrong response"})
+    mismatch["response_acceptance_errors"] = ["result did not match --expected-response exactly"]
+    mismatch_payload = collaborate.return_payload("compact", mismatch, ".ai-collaboration/outputs/run-mismatch.json", None, [])
+    assert mismatch_payload["response_acceptance_failed"] is True and mismatch_payload["response_acceptance_errors"]
 
     compact = collaborate.return_payload("compact", full, ".ai-collaboration/outputs/run-1.json", response, errors)
     assert "result" not in compact and compact["result_contract_failed"] is False

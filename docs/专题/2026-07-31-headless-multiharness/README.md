@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. WP-11.0/WP-11.1 are implemented and locally validated on macOS: value-aware handoff scanning and a Claude Code native-JSON-Schema adapter. WP-11.2 supplies a Claude-first harness interface, runtime identity and a dry-run/backup-then-apply migration; default Claude Code + DeepSeek/MiMo routing remains unchanged. WP-11.3 has an explicit, trusted, read-only Antigravity adapter, fake launcher, and one macOS no-tool schema smoke; it has no automatic routing. The runner's host must allow agy user-log and localhost resources. Windows fake-launcher and real smoke remain required.
+WP-11.0–WP-11.3 are implemented and now have macOS and Windows evidence. Windows completed the full local regression suite, a Claude Code native-schema smoke plus exact session resume, an Antigravity P2 read-only schema smoke, and a Claude exact-text smoke. Default Claude Code + DeepSeek/MiMo routing remains unchanged; Antigravity has no automatic routing. The runner's host must allow agy user-log and localhost resources. P3 controlled execution and P4 candidate policy remain explicitly out of scope.
 
 ## Problem and baseline
 
