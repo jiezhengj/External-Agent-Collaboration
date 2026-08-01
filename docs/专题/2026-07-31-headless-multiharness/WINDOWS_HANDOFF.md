@@ -76,7 +76,49 @@ py -3 .agents\skills\external-agent-collaboration\scripts\consult_antigravity.py
 
 已将 Windows 结果写入 [迭代记录](../../迭代记录.md)。不得记录 token、完整 stderr、prompt 或 provider 输出。已更新专题入口；P2 已具备双平台证据。
 
-P3 已完成诊断并被证明不可用：future AGY CLI/agent 更新后只能通过同一 isolated P3 契约重新验证；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
+P3 已完成足以固定产品结论的诊断：除第 5.1 节这一次 Windows isolated evidence-parity 复现外，未来 AGY CLI/agent 更新后才可再通过同一 isolated P3 契约重新验证；P4 需要基准证据和新 DEC。永远不要提前把 Antigravity 加进 DeepSeek/MiMo 的公平轮换。
+
+## 5.1 达到 macOS 当前证据进度：Windows isolated full-auto 对照
+
+除本节外，Windows 已具备与 macOS 相同的 Claude Code、路由、P2 Antigravity 只读、fake launcher 和本地回归证据。macOS 另有一项 **disposable isolated full-auto** 实验：即使 effective permission mode 为 `always-proceed`、`write_to_file` 可用，AGY 仍未写入唯一目标。Windows 尚未运行这项完全相同的隔离对照；它是 Windows Codex 达到 macOS 当前证据进度的唯一剩余实机工作。
+
+这不是重新尝试让 AGY 加入 execute 路由，也不是修改 settings、扩大路径 allowlist 或在主工作树传 `--dangerously-skip-permissions`。它只在一个临时目录运行，项目工作树不会被交给 AGY。请先拉取当前 `main`，完成第 1–2 节的 profile/本地回归检查；若 CLI、profile 或 trust fingerprint 自上次 Windows smoke 后发生变化，第 1、3、4 节的最小 smoke 也要按当前状态重跑。
+
+Windows 的 Git 忽略 `.ai-collaboration\harness-profiles.local.json` 若尚未定义 `antigravity_local_full_auto`，在其 `profiles` 对象中加入下列**非密钥** profile，再运行下面的 trust 命令。它只为 disposable executor 提供实验开关；不是普通 AGY execute profile，也不得写入版本控制：
+
+```json
+"antigravity_local_full_auto": {
+  "harness": "antigravity",
+  "launcher": "agy",
+  "mode": "accept-edits",
+  "execution_scope": {
+    "allowed_paths": [".ai-collaboration/capability-lab/agy-isolated-p3/"],
+    "allowed_commands": []
+  },
+  "dangerously_skip_permissions": true
+}
+```
+
+先创建一个 **Git 忽略** 的 pending source，避免误用已含 `P3 controlled execute accepted` 的历史 tracked artefact 而产生“未写入也匹配”的假阳性：
+
+```powershell
+$target = '.ai-collaboration\capability-lab\agy-isolated-p3\pending.md'
+$handoff = '.ai-collaboration\handoffs\windows-agy-isolated-p3.md'
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+[System.IO.File]::WriteAllText((Join-Path (Get-Location) $target), "P3 pending`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path (Get-Location) $handoff), @"
+This is a non-sensitive isolated Windows P3 diagnostic. Edit only the declared target in the disposable project copy. Replace its entire content with exactly the requested text. Do not use shell and do not change any other file.
+"@, $utf8NoBom)
+
+py -3 .agents\skills\external-agent-collaboration\scripts\doctor_harness.py --profile antigravity_local_full_auto --json
+py -3 .agents\skills\external-agent-collaboration\scripts\trust_harness.py --profile antigravity_local_full_auto --approve
+py -3 .agents\skills\external-agent-collaboration\scripts\execute_antigravity_isolated.py --profile antigravity_local_full_auto --handoff $handoff --target $target --expected 'P3 controlled execute accepted' --timeout 180
+```
+
+预期当前版本返回 exit code `3`，并在 ignored `.ai-collaboration\outputs\isolated-*.json` 留下脱敏 record：`target_before` 必须是 `P3 pending`，`tool_diagnostics.permission_mode` 应为 `always-proceed`，`tool_diagnostics.write_tool_available` 为 true，`target_matched` 为 false，`non_target_changed_paths` 为空。随后运行 `git status --short`，确认没有 tracked 项目文件变化；不得提交该运行态 record。
+
+若这次在 Windows 意外 `target_matched: true`，也**不得**直接启用 AGY execute：记录 Windows CLI 版本、profile fingerprint、record 中的无内容诊断字段和 Git revision，然后在 macOS 用同一 fresh pending source 重现；只有跨平台成功、完整回归和新的 DEC 都成立后才可重新评估 P3。若仍如预期失败，则记录结果并停止 AGY execute 相关工作；产品结论保持“AGY P2 只读，Claude Code 为唯一自动 execute harness”。
 
 ## 6. P3 Windows 实测问题日志（2026-08-01，历史诊断）
 
