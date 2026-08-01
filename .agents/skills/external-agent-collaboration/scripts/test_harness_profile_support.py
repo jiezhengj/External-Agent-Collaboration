@@ -22,6 +22,9 @@ def main() -> None:
         execute = {"harness": "antigravity", "launcher": "agy", "mode": "accept-edits", "execution_scope": {"allowed_paths": ["docs/p3-smoke"], "allowed_commands": []}}
         (root / "harness-profiles.local.json").write_text(json.dumps({"profiles": {"execute": execute}}), encoding="utf-8")
         assert profiles.load_profiles(root)["execute"] == execute
+        full_auto = {**execute, "dangerously_skip_permissions": True}
+        (root / "harness-profiles.local.json").write_text(json.dumps({"profiles": {"full-auto": full_auto}}), encoding="utf-8")
+        assert profiles.load_profiles(root)["full-auto"] == full_auto
         (root / "harness-profiles.local.json").write_text(json.dumps({"profiles": {"bad": {"harness": "antigravity", "mode": "plan", "api_token": "not-allowed"}}}), encoding="utf-8")
         try:
             profiles.load_profiles(root)

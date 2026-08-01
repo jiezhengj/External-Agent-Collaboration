@@ -63,6 +63,8 @@ def main() -> None:
     assert diagnostics["terminal_status"] == "SUCCESS" and "do-not-store-this-model-text" not in json.dumps(diagnostics)
     execute_argv = adapter.command(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "accept-edits"}))
     assert execute_argv[execute_argv.index("--mode") + 1] == "accept-edits"
+    full_auto_argv = adapter.command(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "accept-edits", "dangerously_skip_permissions": True}))
+    assert "--dangerously-skip-permissions" in full_auto_argv
     print("antigravity-adapter tests passed")
 
 

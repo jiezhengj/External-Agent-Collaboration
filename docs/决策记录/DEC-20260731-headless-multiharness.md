@@ -25,9 +25,9 @@
 ## 后果
 
 - session、trust、health、capability 和 metrics 必须增加 harness/profile/platform 边界；不同 harness 绝不恢复彼此 session。
-- Antigravity 在 P2 前不进入自动路由；P2 后仅承担已定义的独立只读评审角色。任何真实调用继续需要用户的当前 profile 批准与宿主 egress 审批；不可用时回到 Codex 直接处理/诊断，不静默改作 Claude Code 的同类任务。
+- Antigravity 在 P2 前不进入自动路由；P2 后仅承担已定义的独立只读评审角色。当前 profile 已配置、指纹已信任且宿主允许 egress 时，Codex 可直接运行最小真实调用；不可用时回到 Codex 直接处理/诊断，不静默改作 Claude Code 的同类任务。
 - `--dangerously-skip-permissions` 永不用于自动执行；软拒绝即使进程退出 0 也必须为 `blocked_by_permission`。
-- 每一实施阶段都须有 macOS + Windows fake launcher/本地回归；真实 smoke 由用户分别授权。
+- 每一实施阶段都须有 macOS + Windows fake launcher/本地回归；当前平台已配置、已信任的 profile 直接运行最小真实 smoke。
 
 ## 受影响文档与证据
 

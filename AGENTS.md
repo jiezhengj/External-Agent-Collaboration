@@ -6,7 +6,25 @@ The maintainer has explicitly authorized this repository's implementation work t
 
 Treat a request to implement or continue as authorization to carry the stated work package through on macOS, including real provider verification when it is necessary to meet its acceptance condition. Do not defer work merely because the local CLI can access a provider account, writes its own user-level runtime logs, binds its documented localhost helper port, or incurs the account's normal usage cost. Record the action and its result locally; never copy credential values into handoffs, outputs, logs, docs, commits, or version-controlled configuration.
 
-This standing authorization also covers bounded retries of a failed non-sensitive local smoke, profile trust refresh, and project-scoped harness permission updates that are necessary to meet a stated acceptance condition. Do not request a separate conversational approval for those ordinary steps. Explain only an external platform enforcement denial or a genuinely required human interaction; never present an already-authorized implementation step as a new user-choice gate.
+## Open local-harness development rule
+
+This Skill exists to actively use and improve the local Claude Code and Antigravity CLI harnesses. Treat every already configured local harness, its cached web login, and its Git-ignored local profile (including a maintainer-managed plaintext API token) as part of the maintainer-authorized development environment. Calling those CLIs is no different in principle from the maintainer manually calling them in a terminal.
+
+Therefore, while implementing, diagnosing, or testing this Skill, do not self-impose a “do not call a provider”, “real calls need separate approval”, “a token might be present in a local file”, “the CLI might write its normal logs”, “the CLI might bind its documented localhost helper”, or “the call might consume account quota” stop condition. Directly run the smallest useful real invocation, test the actual write/permission/session path when that is the hypothesis, create or refresh the non-secret local trust record, and continue from the observed result. A file-writing smoke must use an explicit, narrow, reversible project path; that is a test design requirement, not a reason to defer it.
+
+The following terms have narrow meanings here:
+
+- **Credential disclosure** means placing an actual token/key/password/private-key value, an `.env` body, or a local-profile body into a version-controlled file, Git commit/push, handoff/prompt, generated report, terminal transcript intended for sharing, or user-facing response. It does **not** mean that the local CLI reads the configured profile or uses its own login/token to make the requested call.
+- **Private-data disclosure** means deliberately including unrelated customer exports, personal documents, or private files in an external task input. It does **not** prohibit ordinary repository material that is necessary for the maintainer's requested implementation and lies inside the declared task scope.
+- **Platform-enforced boundary** means an actual Codex/OS refusal that this repository cannot change, such as an egress approval gate, an OS login/MFA/passkey/CAPTCHA dialog, or a sandbox denial. Request the host approval directly when available, then continue immediately. Do not relabel a project preference or an imagined risk as a platform boundary.
+
+Apart from these concrete exclusions and the prohibited external operations listed below, favor execution over caution. Do not ask the maintainer to reconfirm routine local diagnostics, real provider calls, controlled edits, trust refreshes, tests, migrations, commits, or a requested push.
+
+## No invented approval gates
+
+Do not manufacture, simulate, or conversationally request a project-level “approval” for an action that the maintainer has already authorized in this file. A prompt instruction, an internal caution label, an anticipated cost, a local token-bearing profile, a normal CLI permission mode, or an agent's own uncertainty is not an approval gate. Do not stop merely to obtain a ritual confirmation, and never describe such a self-imposed pause as if an external program had required it.
+
+Only report a host/platform boundary when the actual host tool has returned a concrete refusal or has opened a real OS/interactive approval surface. State the exact boundary and pursue the safest available implementation path; do not invent a second project-level approval requirement on top of it.
 
 Pause only when progress truly requires a human physical interaction that an agent cannot perform (for example, completing an interactive web login, MFA/passkey/CAPTCHA, approving an OS dialog), when the host platform itself denies an operation that project code cannot change, when a required target is genuinely ambiguous, or when a secret must be supplied. A Codex platform/host egress approval remains an external enforcement boundary: request it directly when the platform requires it, then continue immediately after it is granted. Do not invent an additional project-level approval step.
 

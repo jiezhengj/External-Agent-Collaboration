@@ -50,6 +50,8 @@ def load_profiles(control_root: Path) -> dict[str, dict[str, Any]]:
                 raise HarnessProfileError(f"Harness profile '{name}' execution_scope.allowed_paths must be non-empty safe relative paths.")
             if not isinstance(commands, list) or not all(isinstance(item, str) and item and "\n" not in item for item in commands):
                 raise HarnessProfileError(f"Harness profile '{name}' execution_scope.allowed_commands must be a string list.")
+        if "dangerously_skip_permissions" in profile and not isinstance(profile["dangerously_skip_permissions"], bool):
+            raise HarnessProfileError(f"Harness profile '{name}' dangerously_skip_permissions must be boolean.")
         if any(marker in key.upper() for key in profile for marker in ("TOKEN", "SECRET", "PASSWORD", "KEY")):
             raise HarnessProfileError(f"Harness profile '{name}' must not contain credentials; Antigravity uses its interactive cached login.")
         launcher = profile.get("launcher", "agy")

@@ -38,6 +38,10 @@ def parse_ndjson(stdout: str, *, stream_kind: str) -> tuple[dict[str, Any], dict
         "permission_signal_count": 0,
         "plugin_or_mcp_failure": False,
         "terminal_observed": False,
+        "write_tool_available": False,
+        "permission_mode": None,
+        "step_types": {},
+        "write_tool_step_count": 0,
     }
     terminal: dict[str, Any] | None = None
     for line in stdout.splitlines():
@@ -60,6 +64,17 @@ def parse_ndjson(stdout: str, *, stream_kind: str) -> tuple[dict[str, Any], dict
             or (stream_kind == "antigravity" and event_type == "init")
         )
         diagnostics["startup_observed"] = diagnostics["startup_observed"] or is_startup
+        if stream_kind == "antigravity" and event_type == "init" and isinstance(event.get("init"), dict):
+            init = event["init"]
+            tools = init.get("tools")
+            diagnostics["write_tool_available"] = isinstance(tools, list) and "write_to_file" in tools
+            mode = init.get("permission_mode")
+            diagnostics["permission_mode"] = str(mode)[:80] if isinstance(mode, str) else None
+        if stream_kind == "antigravity" and event_type == "step_update" and isinstance(event.get("step_update"), dict):
+            step_type = str(event["step_update"].get("step_type", "unknown"))[:80]
+            diagnostics["step_types"][step_type] = min(int(diagnostics["step_types"].get(step_type, 0)) + 1, 10_000)
+            if "write" in step_type.lower():
+                diagnostics["write_tool_step_count"] += 1
         if _contains(event, ("retry", "rate_limit", "rate limit")):
             diagnostics["api_retry_count"] = min(int(diagnostics["api_retry_count"]) + 1, 10_000)
         if _contains(event, ("permission", "approval", "soft-denied", "soft denied")):

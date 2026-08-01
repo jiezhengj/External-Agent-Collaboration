@@ -1,0 +1,14 @@
+{
+  "outcomes": [
+    {
+      "type": "file_equals",
+      "path": "docs/专题/2026-07-31-headless-multiharness/p3-smoke/accepted.md",
+      "text": "P3 controlled execute accepted\n"
+    },
+    {
+      "type": "changed_paths",
+      "min": 1,
+      "max": 1
+    }
+  ]
+}

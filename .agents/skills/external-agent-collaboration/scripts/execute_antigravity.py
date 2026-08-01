@@ -20,6 +20,10 @@ def scope_allows(requested: list[Path], configured: list[str]) -> bool:
     return all(collaborate.allowed(path, [Path(value) for value in configured]) for path in requested)
 
 
+def full_auto_requires_isolation(profile: dict) -> bool:
+    return profile.get("dangerously_skip_permissions") is True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--topic", required=True)
@@ -31,6 +35,7 @@ def main() -> int:
     parser.add_argument("--profile", default="antigravity_execute")
     parser.add_argument("--working-directory", default=str(collaborate.PROJECT_ROOT))
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--stream-diagnostics", action="store_true")
     args = parser.parse_args()
     try:
         if args.timeout < 1:
@@ -48,6 +53,8 @@ def main() -> int:
             raise collaborate.CollaborationError("P3 execute requires a trusted Antigravity accept-edits profile.")
         if not trusted(collaborate.CONTROL_ROOT, args.profile, profile):
             raise collaborate.CollaborationError("Antigravity execute profile has no current trust record.")
+        if full_auto_requires_isolation(profile):
+            raise collaborate.CollaborationError("Full-auto Antigravity must use execute_antigravity_isolated.py; main-worktree execute is forbidden.")
         scope = profile["execution_scope"]
         configured_paths = scope["allowed_paths"]
         configured_commands = scope["allowed_commands"]
@@ -63,10 +70,11 @@ def main() -> int:
 Allowed commands: {', '.join(args.allow_command) or '(none)'}.
 Never access protected material, commit, push, deploy, publish, install software, or use an unlisted command.
 Return this JSON contract only:\n{collaborate.response_contract_instruction('compact', 'standard')}\n\nHandoff:\n{handoff}"""
-        code, stdout, stderr = adapter.invoke(AntigravityInvocation(str(profile.get("launcher", "agy")), prompt, workdir, os.environ.copy(), args.timeout, collaborate.RESPONSE_CONTRACT_SCHEMA, profile))
+        code, stdout, stderr = adapter.invoke(AntigravityInvocation(str(profile.get("launcher", "agy")), prompt, workdir, os.environ.copy(), args.timeout, collaborate.RESPONSE_CONTRACT_SCHEMA, profile, output_format="stream-json" if args.stream_diagnostics else "json"))
         if code != 0:
             raise collaborate.CollaborationError(f"Antigravity execute failed before a usable response (exit={code}, category={adapter.classify_error(code, stderr) or 'unclassified'}).")
-        result = adapter.parse_outer_result(stdout)
+        diagnostics = None
+        result, diagnostics = adapter.parse_stream_result(stdout) if args.stream_diagnostics else (adapter.parse_outer_result(stdout), None)
         permission = adapter.permission_state({**result, "error": str(result.get("error", "")) + " " + stderr})
         response, errors = collaborate.parse_response_contract(result)
         after = collaborate.manifest(collaborate.PROJECT_ROOT)
@@ -78,7 +86,7 @@ Return this JSON contract only:\n{collaborate.response_contract_instruction('com
             collaborate.restore_changed(before, collaborate.manifest(collaborate.PROJECT_ROOT), checkpoint)
         status = "blocked_by_permission" if permission == "blocked_by_permission" else "failed" if failed else "completed"
         output = collaborate.output_path(run_id, "outputs")
-        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "topic": args.topic, "action": "execute", "permission_state": permission, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "result_contract": {"valid": response is not None, "errors": errors}}
+        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "topic": args.topic, "action": "execute", "permission_state": permission, "stream_diagnostics": diagnostics, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "result_contract": {"valid": response is not None, "errors": errors}}
         collaborate.write_json(output, record)
         print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}, ensure_ascii=False))
         return 0 if status == "completed" else 3

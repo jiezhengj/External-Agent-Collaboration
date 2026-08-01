@@ -26,6 +26,7 @@ class AntigravityInvocation:
     response_schema: dict[str, Any]
     profile: dict[str, Any]
     conversation_id: str | None = None
+    output_format: str = "json"
 
 
 class AntigravityAdapter:
@@ -48,7 +49,9 @@ class AntigravityAdapter:
         problems = self.doctor(request.profile)
         if problems:
             raise AntigravityAdapterError("; ".join(problems))
-        command = [request.launcher, "-p", request.prompt, "--output-format", "json", "--json-schema", json.dumps(request.response_schema, ensure_ascii=False, separators=(",", ":")), "--mode", str(request.profile.get("mode", "plan"))]
+        command = [request.launcher, "-p", request.prompt, "--output-format", request.output_format, "--json-schema", json.dumps(request.response_schema, ensure_ascii=False, separators=(",", ":")), "--mode", str(request.profile.get("mode", "plan"))]
+        if request.profile.get("dangerously_skip_permissions") is True:
+            command.append("--dangerously-skip-permissions")
         for field, flag in (("model", "--model"), ("effort", "--effort"), ("agent", "--agent")):
             value = request.profile.get(field)
             if isinstance(value, str) and value:

@@ -131,3 +131,47 @@ Windows 上的现象不是已知的 token、profile trust、allow-path 或 works
 3. 用本节完全相同的单文件、无 shell、无危险跳过 smoke 运行一次，并只记录：是否调用写入工具、最终目标文件是否匹配、范围外变更数、结构化响应是否有效和权限状态。
 4. 若 macOS 成功，请记录 Windows 与 macOS 的 CLI 版本、profile 生效方式、settings 关键字段名与运行模式差异，并据此提出最小 Windows 修复；不要扩大 allowlist。
 5. 若 macOS 同样失败，应将问题归类为 CLI/headless 执行语义或模型工具路由问题，并在官方参考与可观察的初始化/工具可用性信息中继续定位。
+
+### 6.6 macOS 对照的校正与建议（2026-08-01）
+
+先校正一个容易造成误判的前提：现有 macOS 的成功证据是 P2 的 `--mode plan`、无工具、只读 schema smoke，**不是** P3 的 `--mode accept-edits` 写入成功。因此它只能证明 macOS 的登录、headless JSON/schema 和只读 conversation 可用，不能作为 Windows P3 “同链路已成功”的对照结论。
+
+macOS 本机 `agy --help` 已确认当前 CLI 暴露 `--mode accept-edits`、`--output-format stream-json` 与 `--json-schema`；`antigravity_execute` 的本地 profile doctor/trust 也可通过。这些是 P3 的前置条件，不是写入能力证据。
+
+当前执行器的 `permission_state: allowed` 同样需要谨慎解释：它只表示终态为 `SUCCESS` 且最终 JSON/stderr 没出现 permission/approval 标记；它**不**表示 `write_to_file` 已被实际调用、也不表示该工具已获明确许可。因此 Windows 的“allowed + changed_files=[]”应暂定为“未观察到拒绝”，而非“写入权限已证明”。
+
+下一轮两端都应使用同一份更可诊断的 smoke，而不是仅强化自然语言提示：
+
+1. 将目标改为预先存在、内容为 `P3 pending` 的受控文件，再要求只把它覆盖为 `P3 controlled execute accepted`。这样把“是否自动创建父目录”从变量中移除；失败回滚后文件必须恢复为 `P3 pending`。
+2. 为 P3 执行器增加 opt-in `stream-json` 诊断，只持久化无内容字段：`init` 是否列出 `write_to_file`、有效 permission mode、步骤类型计数、是否观察到写入工具事件、permission signal count、terminal status 和目标/范围检查结果。不得保存 prompt、模型文本、路径之外的文件内容或原始 events。
+3. 将 `permission_state` 拆成“terminal permitted/blocked”和“write tool observed/not observed”；只有后者为 observed 才能称写入路径被验证。相同 `SUCCESS` 但没有写入工具事件时，应报告 `no_write_attempt`，而不是 `allowed`。
+4. 先在 macOS 跑一次该精简 smoke，再在 Windows 运行完全相同的 profile mode、目标文件、schema 和 timeout。记录 CLI 版本、`init.tools` 是否含写入工具、effective permission mode、工具步骤计数、目标匹配和范围外变更数。两端结果才构成可归因对照。
+5. 若 macOS 的 init 中无 `write_to_file`，或两端均有该工具但始终无写入步骤，则问题在 agent/tool routing 或 headless execute 语义，而不是 Windows allowlist；若 macOS 有写入而 Windows 没有，再只比较 CLI 版本和 settings/workspace trust 的规范化字段，提出最小 Windows 修复。
+
+P3 不应以 `--dangerously-skip-permissions` 或扩大到全局 allowlist 来“通过”。目的不是绕开权限，而是拿到能够说明工具为何没有被调用的跨平台证据。
+
+### 6.7 macOS 同契约实测结果（2026-08-01）
+
+macOS 已完成与本节相同边界的真实对照，结果**复现** Windows P3 失败，而不是成功：
+
+- 无文件工具的 `agy -p "Reply exactly PING." --output-format json --mode plan` 返回 `SUCCESS` 和精确 `PING`，证明当前交互登录、headless CLI 和基础网络路径可用。
+- `antigravity_execute` 的 profile doctor/trust 均为 `ok: true`；当前 `agy --help` 明确列出 `--mode accept-edits`。
+- 以预先存在的、内容为 `P3 pending` 的唯一受控文件运行 P3 execute 后，run `1785565844-ef7bfc83` 记录为 `status: failed`、结构化 contract 有效、`permission_state: allowed`、`changed_files: []`；两个 outcome 均失败，目标文件保持 `P3 pending`，没有范围外变更。
+
+这排除了“Windows 特有的 CLI 登录、accept-edits flag 缺失、目标目录创建或单纯 workspace trust 格式差异”作为首要解释。当前最可信的共同问题是：headless `accept-edits` run 没有让 agent 调用写入工具，而现有 JSON terminal 解析又不能区别“工具未尝试”与“工具已许可”。P3 继续 blocked；下一项实现应是 6.6 的无内容 stream diagnostics，而不是放宽 Windows 权限。
+
+### 6.8 macOS 第二次复测：软拒绝与记录完整性（2026-08-01）
+
+以同一 profile、同一预先存在目标、同一无 shell 范围再次触发 P3 后，目标仍为 `P3 pending`。最新受限状态记录为 `status: blocked_by_permission`、`permission_state: blocked_by_permission`、`changed_files: []`，且没有可用 structured output。它进一步证明 P3 不是 macOS 已成功、Windows 单独失败的情形；两端都不能把当前 `accept-edits` headless 行为视为已验证的文件写入能力。
+
+本次还发现记录 topic 与调用方传入的 topic 不一致。P3 runner 的下一轮回归应断言：每次输出 record 的 `topic`、`harness_profile`、working-directory identity 与实际 argv 一致；任何不一致都必须在调用后立即失败，而不能作为平台行为证据。完成这项 record-integrity 修复后，再用 6.6 的 stream-json 无内容诊断复跑 macOS 与 Windows。
+
+### 6.10 isolated full-auto 结论（2026-08-01）
+
+macOS 以 disposable 临时项目运行 full-auto；临时项目只包含 P3 目标文件和脱敏 handoff。run `isolated-1785568585-dfd9fc5d` 的 effective mode 为 `always-proceed`，`write_to_file` 可用、12 次工具调用、没有范围外文件变更，但目标仍未匹配。故障不依赖主工作树、settings 预授权或 Windows。当前 AGY headless 保留 P2 read-only；P3 只能在未来 CLI/agent 更新后以同一实验重新验证。
+
+### 6.9 macOS stream-json 诊断结论（2026-08-01）
+
+方案 2 已在 macOS 实测。run `1785566527-4aa04f1d` 的无内容诊断显示：`init.tools` 包含 `write_to_file`，但 effective `permission_mode` 是 `request-review`；共观察到 2 个 `tool` 步骤和 2 个 permission signal，最终 terminal `SUCCESS` 仍被归一化为 `blocked_by_permission`，目标文件没有变更。没有 API retry 或 plugin/MCP failure。
+
+因此根因已收敛为 headless `accept-edits` 没有把写入操作切换到可自动执行的权限策略，而不是 Windows、模型缺少写工具或 runner 没有传 `--mode accept-edits`。下一步只需核对 Antigravity settings 中能把这个**唯一受控路径**的 `write_to_file` 从 request-review 提升为 allow 的精确规则和生效工作区；不得放开 shell、全局路径或危险跳过参数。若该官方设置在 macOS/Windows 都不能使 effective mode 变化，则正式固定 AGY 为 read-only harness，停止 P3。
