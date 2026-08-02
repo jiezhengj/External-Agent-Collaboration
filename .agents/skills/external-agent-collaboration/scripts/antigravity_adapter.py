@@ -1,4 +1,4 @@
-"""Read-only Antigravity headless adapter; no automatic runner integration yet."""
+"""Read-only Antigravity headless adapter used by explicit and role-router paths."""
 
 from __future__ import annotations
 
