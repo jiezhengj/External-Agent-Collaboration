@@ -81,11 +81,16 @@ def main() -> None:
                 tools=[], allowed_tools=[], disallowed_tools=[], timeout=10, response_transport="buffered_sse",
             ))
             if not (code == 0 and stderr == "" and "structured_output" in stdout):
+                stderr_lower = stderr.lower()
                 raise AssertionError(json.dumps({
                     "code": code,
                     "stderr_bytes": len(stderr.encode("utf-8", "replace")),
                     "stdout_bytes": len(stdout.encode("utf-8", "replace")),
                     "stdout_lines": len(stdout.splitlines()),
+                    "stderr_markers": {
+                        marker: marker in stderr_lower
+                        for marker in ("traceback", "permission", "winerror", "urlopen", "http error", "connection", "timeout", "no module")
+                    },
                 }))
     finally:
         proxy.close()
