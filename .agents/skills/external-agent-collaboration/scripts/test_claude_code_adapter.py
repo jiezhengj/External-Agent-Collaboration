@@ -45,7 +45,7 @@ def main() -> None:
             launcher.write_text(f"#!{sys.executable}\n" + helper.read_text(encoding="utf-8"), encoding="utf-8")
             launcher.chmod(0o700)
         code, stdout, stderr = collaborate.invoke(
-            {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path)}},
+            {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path), "PYTHONHASHSEED": "0"}},
             "consult", "test", root, {"session_id": "saved-session"}, False, True, [], 10,
         )
         assert code == 0 and not stderr and UNICODE_SUMMARY in stdout and "\ufffd" not in stdout
@@ -58,7 +58,7 @@ def main() -> None:
         response, errors = collaborate.parse_response_contract(outer)
         assert response == UTF8_VALID and errors == []
         code, _stdout, stderr = collaborate.invoke(
-            {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path)}},
+            {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path), "PYTHONHASHSEED": "0"}},
             "consult", "test", root, None, True, False, [], 10, True,
         )
         assert code == 0 and not stderr
@@ -94,6 +94,7 @@ def main() -> None:
                 environment={
                     "HANG_SUBTYPE": subtype, "HANG_IS_ERROR": "1" if is_error else "0",
                     "HANG_ERROR": "1" if error else "0", "HANG_EXIT": "1" if exit_code else "0",
+                    "PYTHONHASHSEED": "0",
                 },
                 tools=[], allowed_tools=[], disallowed_tools=[], timeout=1, stream_diagnostics=stream,
             ))
