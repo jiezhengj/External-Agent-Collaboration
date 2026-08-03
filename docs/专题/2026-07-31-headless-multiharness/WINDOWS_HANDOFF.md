@@ -1,10 +1,93 @@
 # Windows Codex 接手：Headless multi-harness 验收
 
+> 当前版本：2026-08-03，代码基线 `2412476`，分支 `codex/configurable-provider-routing`。
+
+## 0. 当前接手结论（优先阅读）
+
+Windows Codex 接手后**不需要继续修改配置化 Provider routing 的代码**。当前实现、文档和双平台 CI 已收口：GitHub Actions run [`30791711696`](https://github.com/jiezhengj/External-Agent-Collaboration/actions/runs/30791711696) 的 `macos-latest` 与 `windows-latest` 均通过，统一入口通过 34 个回归脚本。Claude Code 内的 `fair_round_robin`、`fixed`、`weighted_round_robin`、health cooldown、一次 availability fallback、buffered SSE relay 和终态 `billing` 归一化已经完成。
+
+Windows Codex 仍有一组**机器级接手动作**，因为 token、Claude 配置目录、trust fingerprint、session 和运行态文件都不进入 Git：
+
+|事项|Windows 接手后是否需要|完成判定|
+|---|---|---|
+|拉取当前实现|需要|当前提交为 `2412476` 或其后续提交，工作树无未预期 tracked 改动。|
+|配置 Windows provider profile|需要，若该 Windows 用户尚未配置|`doctor.py --provider deepseek/mimo --json` 均返回 `ok: true`。|
+|建立本机 provider trust|需要，profile 配置稳定后执行|`trusted-providers.local.json` 有当前 Windows fingerprint；不复制 macOS trust。|
+|Windows 本地回归|建议执行；用于本机接手证据|`run_regression.py` 输出 `cross-platform regression passed: 34 test scripts`。CI 已证明代码矩阵通过，但不替代本机环境检查。|
+|Windows 真实 provider smoke|仅当要证明这台 Windows 机器可实际调用时需要|最小无敏感 smoke 完成、结构化 contract 通过、无项目文件变更；billing 只能记录为外部账户条件，不能伪报成功。|
+|Antigravity P2/P3|Provider routing 接手不需要|P2 只读是可选的 multi-harness 验证；P3 execute 当前明确 blocked，不得为“接手完成”重新尝试或放宽权限。|
+
+### 0.1 Windows 接手最短路径
+
+以下命令在仓库根目录执行。它们不会打印 token；不要把 profile、trust、outputs、logs 或 snapshots 加入 Git：
+
+```powershell
+git fetch origin
+git switch codex/configurable-provider-routing 2>$null
+if ($LASTEXITCODE -ne 0) {
+  git switch --track origin/codex/configurable-provider-routing
+}
+git pull --ff-only origin codex/configurable-provider-routing
+git rev-parse --short HEAD
+
+py -3 .agents\skills\external-agent-collaboration\scripts\bootstrap.py --init
+py -3 .agents\skills\external-agent-collaboration\scripts\bootstrap.py --check
+py -3 .agents\skills\external-agent-collaboration\scripts\doctor.py --routing --json
+```
+
+若 `.ai-collaboration\providers.local.windows.json` 不存在，先复制公开模板；若已存在，**不要覆盖**：
+
+```powershell
+$profile = '.ai-collaboration\providers.local.windows.json'
+if (-not (Test-Path $profile)) {
+  Copy-Item '.ai-collaboration\providers.local.windows.example.json' $profile
+}
+```
+
+然后在该 Git 忽略文件中按 `providers.shared.json` 的 provider key 配置 `deepseek`、`mimo`（或用户实际使用的 provider），每个 provider 至少提供本机 `auth_token`；共享配置中的相对 `config_dir_relative_to_home`、launcher、endpoint、模型映射和 `response_transport` 会继续生效。需要自定义目录时，才在 Windows local overlay 写入 Windows 路径的 `config_dir`。不要复制 macOS 的绝对路径、session、capability 或 trust 记录，也不要把 token 迁移到环境变量、Credential Manager 或 handoff。
+
+配置完成后执行：
+
+```powershell
+py -3 .agents\skills\external-agent-collaboration\scripts\doctor.py --provider deepseek --json
+py -3 .agents\skills\external-agent-collaboration\scripts\doctor.py --provider mimo --json
+py -3 .agents\skills\external-agent-collaboration\scripts\trust_provider.py --provider deepseek --approve
+py -3 .agents\skills\external-agent-collaboration\scripts\trust_provider.py --provider mimo --approve
+
+$env:PYTHONPYCACHEPREFIX = Join-Path $env:TEMP 'ext-agent-pycache'
+py -3 .agents\skills\external-agent-collaboration\scripts\run_regression.py
+git diff --check
+```
+
+`doctor` 或回归失败时，先修复 Windows launcher、配置目录、profile schema 或路径问题；不要通过复制 macOS runtime、切换 CC Switch 全局 provider、添加 `--model` 或放宽安全边界来绕过。完成上述动作后，Windows Codex 即可接手日常任务。
+
+### 0.2 可选：Windows 真实 routing smoke
+
+只有在要验证当前 Windows 账户实际可调用时才运行；CI 不读取真实凭据。使用已有的无敏感 smoke handoff，并给本次运行使用新 topic，避免接管旧 session：
+
+```powershell
+py -3 .agents\skills\external-agent-collaboration\scripts\collaborate.py `
+  --action consult `
+  --provider auto `
+  --topic windows-provider-routing-smoke-20260803 `
+  --handoff docs\专题\2026-07-31-headless-multiharness\windows-claude-schema-smoke.md `
+  --working-directory . `
+  --timeout 180 `
+  --return-mode structured `
+  --stream-diagnostics `
+  --task-type planning `
+  --mode analyze `
+  --topic-goal 'Verify Windows configured provider routing without project access.' `
+  --stop-rule 'Complete one non-sensitive Windows provider routing smoke.'
+```
+
+成功判定：`status: completed`、`result_contract_failed: false`、`changed_file_count: 0`、`restored_violations: []`，并且 routing/provider/health 信息可解释。若 MiMo 返回账户余额不足，应看到 `billing` cooldown，并在可用时由 health/failover 选择 DeepSeek；这是账户运营条件，不是 Windows routing 代码未完成。任何失败都只记录脱敏状态，不记录原始 stderr、provider 输出或 token。
+
 ## 目标
 
 Windows 真机证据已完成：Claude Code adapter 的全量回归、真实 schema/session smoke、Antigravity P2 fake/live smoke，以及 P4 public role-router smoke 均已通过。P3 已在 macOS/Windows 受控实验及两端 isolated full-auto 实验中失败，因此 AGY 当前固定只读。本文件保留为可复跑验收入口。
 
-Windows Codex 应直接运行本机诊断、测试、fingerprint trust 刷新和无敏感真实 smoke；只有网页登录、MFA/passkey/CAPTCHA、OS 对话框、缺少本机配置或宿主拒绝 CLI 进程时才需要人处理。Git 操作前不得提交或推送 token、`.env`、local profile、outputs、logs 或 snapshots。
+Windows Codex 应先运行本机诊断、测试和 fingerprint trust 刷新；只有要证明这台机器的真实 provider 外发能力时才运行无敏感真实 smoke。只有网页登录、MFA/passkey/CAPTCHA、OS 对话框、缺少本机配置或宿主拒绝 CLI 进程时才需要人处理。Git 操作前不得提交或推送 token、`.env`、local profile、outputs、logs 或 snapshots。
 
 ## 已完成基线
 
@@ -27,10 +110,11 @@ py -3 .agents\skills\external-agent-collaboration\scripts\doctor.py --provider m
 py -3 .agents\skills\external-agent-collaboration\scripts\trust_provider.py --provider deepseek --approve
 py -3 .agents\skills\external-agent-collaboration\scripts\trust_provider.py --provider mimo --approve
 claude --help
-agy --help
+# 仅在要接手 Antigravity P2 时执行：
+# agy --help
 ```
 
-`agy` 使用网页/OAuth cached login；若未登录，仅该交互式登录需要人完成。其 profile 必须是 Git 忽略的 `.ai-collaboration/harness-profiles.local.json`，并至少含 `harness: antigravity`、`launcher: agy`、`mode: plan`。
+`agy` 使用网页/OAuth cached login；若未登录，仅该交互式登录需要人完成。Antigravity 不是 Provider routing 接手前置条件；只有执行第 4 节 P2 smoke 时，其 profile 才必须是 Git 忽略的 `.ai-collaboration/harness-profiles.local.json`，并至少含 `harness: antigravity`、`launcher: agy`、`mode: plan`。
 
 ## 2. 完整 Windows 本地回归
 
@@ -44,7 +128,7 @@ py -3 -m py_compile .agents\skills\external-agent-collaboration\scripts\stream_d
 git diff --check
 ```
 
-已验收：Windows 全量回归通过（23 项）。若 `.cmd` fake launcher、路径、编码或 platform/session isolation 后续失败，修复并补回归，不能以 macOS 成功替代 Windows 证据。
+已验收：Windows 全量回归通过（当前统一入口为 34 项）。若 `.cmd` fake launcher、路径、编码或 platform/session isolation 后续失败，修复并补回归，不能以 macOS 成功替代 Windows 证据。
 
 ## 3. Claude Code 真实 schema + resume smoke
 
@@ -82,7 +166,7 @@ P3 已完成足以固定产品结论的双平台诊断：未来仅在 AGY CLI/ag
 
 Windows 已具备与 macOS 相同的 Claude Code、路由、P2 Antigravity 只读、fake launcher、本地回归和 **disposable isolated full-auto** 证据。Windows run `isolated-1785572668-1f49fab1` 返回 CLI exit code `0`、terminal `SUCCESS`、`permission_mode=always-proceed`、`write_tool_available=true`，但 `write_tool_step_count=0`、目标文件仍为 `P3 pending`，且 `non_target_changed_paths=[]`。这与 macOS 的 full-auto 结论一致：AGY 当前不会把可见的写入工具用于该唯一目标；它不是 Windows 或 settings allowlist 问题。
 
-这不是重新尝试让 AGY 加入 execute 路由，也不是修改 settings、扩大路径 allowlist 或在主工作树传 `--dangerously-skip-permissions`。它只在一个临时目录运行，项目工作树不会被交给 AGY。请先拉取当前 `main`，完成第 1–2 节的 profile/本地回归检查；若 CLI、profile 或 trust fingerprint 自上次 Windows smoke 后发生变化，第 1、3、4 节的最小 smoke 也要按当前状态重跑。
+这不是重新尝试让 AGY 加入 execute 路由，也不是修改 settings、扩大路径 allowlist 或在主工作树传 `--dangerously-skip-permissions`。它只在一个临时目录运行，项目工作树不会被交给 AGY。请先拉取本接手文档顶部指定的当前分支，完成第 1–2 节的 profile/本地回归检查；若 CLI、profile 或 trust fingerprint 自上次 Windows smoke 后发生变化，第 1、3、4 节的最小 smoke 也要按当前状态重跑。
 
 Windows 的 Git 忽略 `.ai-collaboration\harness-profiles.local.json` 若尚未定义 `antigravity_local_full_auto`，在其 `profiles` 对象中加入下列**非密钥** profile，再运行下面的 trust 命令。它只为 disposable executor 提供实验开关；不是普通 AGY execute profile，也不得写入版本控制：
 
