@@ -26,7 +26,99 @@ UNICODE_SUMMARY = "\u7f16\u7801\u56de\u5f52"
 UTF8_VALID = {**VALID, "summary": UNICODE_SUMMARY}
 
 
+def run_windows_adapter_checks() -> None:
+    """Exercise adapter semantics without launching a Python child process.
+
+    The hosted Windows runner can intermittently fail to initialize Python's
+    hash randomization for a Python process launched from a temporary ``.cmd``
+    shim.  The production adapter does not depend on that shim, so keep the
+    Windows test focused on adapter behavior and use the process-support tests
+    for native child-process cleanup semantics.
+    """
+    import claude_code_adapter as adapter_module
+    from process_support import ProcessResult
+
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    original_run_bounded = adapter_module.run_bounded
+
+    def fake_run_bounded(
+        command: list[str], *, cwd: Path, env: dict[str, str], timeout: float | None,
+    ) -> ProcessResult:
+        del cwd, timeout
+        calls.append((command, env.copy()))
+        mode = env.get("FAKE_MODE")
+        if mode == "billing":
+            return ProcessResult(
+                1,
+                json.dumps({"is_error": True, "error": {"message": "Insufficient account balance"}}),
+                "",
+            )
+        if mode == "timeout-stream":
+            stream = "\n".join((
+                json.dumps({"type": "system", "subtype": "init"}),
+                json.dumps({"type": "result", "subtype": "success", "is_error": False, "structured_output": UTF8_VALID}),
+            ))
+            return ProcessResult(124, stream, "", timed_out=True)
+        output_format = command[command.index("--output-format") + 1]
+        if output_format == "stream-json":
+            stdout = json.dumps({
+                "type": "result", "subtype": "success", "is_error": False,
+                "structured_output": UTF8_VALID,
+            }, ensure_ascii=False)
+        else:
+            stdout = json.dumps({"structured_output": UTF8_VALID}, ensure_ascii=False)
+        return ProcessResult(0, stdout, "")
+
+    adapter_module.run_bounded = fake_run_bounded
+    try:
+        root = Path.cwd()
+        request = collaborate.ClaudeInvocation(
+            launcher="claude", prompt="test", workdir=root, config_dir=str(root), environment={},
+            tools=["Read"], allowed_tools=[], disallowed_tools=[], timeout=10,
+            session_id="saved-session", fork_session=True, response_schema=collaborate.RESPONSE_CONTRACT_SCHEMA,
+        )
+        code, stdout, stderr = collaborate.CLAUDE_ADAPTER.invoke(request)
+        assert code == 0 and stderr == "" and UNICODE_SUMMARY in stdout
+        command = calls[-1][0]
+        assert "--model" not in command and "--json-schema" in command
+        schema = json.loads(command[command.index("--json-schema") + 1])
+        assert schema == collaborate.RESPONSE_CONTRACT_SCHEMA
+        assert command[command.index("--resume") + 1] == "saved-session" and "--fork-session" in command
+
+        stream_request = collaborate.ClaudeInvocation(
+            launcher="claude", prompt="test", workdir=root, config_dir=str(root), environment={},
+            tools=[], allowed_tools=[], disallowed_tools=[], timeout=10, stream_diagnostics=True,
+        )
+        code, stdout, stderr = collaborate.CLAUDE_ADAPTER.invoke(stream_request)
+        assert code == 0 and stderr == "" and '"type": "result"' in stdout
+        stream_command = calls[-1][0]
+        assert stream_command[stream_command.index("--output-format") + 1] == "stream-json"
+        assert "--verbose" in stream_command
+
+        timeout_request = collaborate.ClaudeInvocation(
+            launcher="claude", prompt="test", workdir=root, config_dir=str(root),
+            environment={"FAKE_MODE": "timeout-stream"}, tools=[], allowed_tools=[], disallowed_tools=[],
+            timeout=1, stream_diagnostics=True,
+        )
+        code, _stdout, stderr = collaborate.CLAUDE_ADAPTER.invoke(timeout_request)
+        assert code == 0 and stderr == ""
+
+        billing_request = collaborate.ClaudeInvocation(
+            launcher="claude", prompt="test", workdir=root, config_dir=str(root),
+            environment={"FAKE_MODE": "billing"}, tools=[], allowed_tools=[], disallowed_tools=[], timeout=10,
+        )
+        code, _stdout, stderr = collaborate.CLAUDE_ADAPTER.invoke(billing_request)
+        assert code == 1 and "category=billing" in stderr and "balance" not in stderr
+    finally:
+        adapter_module.run_bounded = original_run_bounded
+
+
 def main() -> None:
+    if os.name == "nt":
+        run_windows_adapter_checks()
+        print("claude-code-adapter tests passed")
+        return
+
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         argv_path = root / "argv.json"
