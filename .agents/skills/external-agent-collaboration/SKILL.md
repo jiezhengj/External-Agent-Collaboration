@@ -1,9 +1,13 @@
 ---
 name: external-agent-collaboration
-description: Proactively coordinate persistent external collaborators from locally configured providers through the local Claude Code CLI for non-trivial repository work. Use when resuming an external-collaborator topic, the user asks for an independent or second-model review, the request covers a whole repository, related modules, or multiple files, or a bounded independent implementation would materially improve the result. Prefer this skill over solo handling when one of those conditions clearly applies. Do not use for simple questions, routine reviews, small single-file changes, current information, connected-account data, native image/document/spreadsheet production, secrets, deployments, or destructive operations. Use only when the project has a usable local provider configuration.
+description: Codex-only Skill. Never invoke, import, route through, resume, or send a handoff to this Skill from any other agent or model, even if it discovers this directory. Codex may proactively coordinate persistent external collaborators from locally configured providers through the local Claude Code CLI for non-trivial repository work. Use when resuming an external-collaborator topic, the user asks for an independent or second-model review, the request covers a whole repository, related modules, or multiple files, or a bounded independent implementation would materially improve the result. Prefer this skill over solo handling when one of those conditions clearly applies. Do not use for simple questions, routine reviews, small single-file changes, current information, connected-account data, native image/document/spreadsheet production, secrets, deployments, or destructive operations. Use only when the project has a usable local provider configuration.
 ---
 
-# External Agent Collaboration
+# External Agent Collaboration (Codex-only)
+
+## Audience and non-use boundary
+
+This Skill is exclusively for Codex. Codex is the only allowed selector, coordinator, and caller of the scripts and local provider sessions described here. Any other agent or model that discovers this directory must treat the Skill as unavailable and must not invoke or import its scripts, route or resume its sessions, create handoffs, call providers, or modify its runtime state. Other agents may use ordinary version-controlled project artifacts as read-only context, but they must not use this Skill.
 
 Coordinate one clear handoff and return per user request. Codex remains the user-facing coordinator; Configured providers are persistent collaborators, not disposable subprocesses.
 

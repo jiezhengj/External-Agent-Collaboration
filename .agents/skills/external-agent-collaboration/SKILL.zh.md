@@ -1,6 +1,10 @@
-# 外部代理持续协作（中文镜像）
+# 外部代理持续协作（仅供 Codex 使用）
 
 英文主入口为 [SKILL.md](SKILL.md)，其中的 YAML frontmatter 用于 Codex 发现该 Skill。本文件是相同工作流的中文说明；修改主入口时请同步更新本文件。
+
+## 使用者边界
+
+本 Skill **仅供 Codex 使用**。Codex 是唯一允许选择、协调和调用本 Skill 脚本及本地 provider session 的 Agent。其它任何 Agent 或模型即使发现本目录，也必须将本 Skill 视为不可用：不得调用或 import 其中脚本，不得路由或恢复 session，不得创建 handoff，不得调用 provider，也不得修改本 Skill 的 runtime state。其它 Agent 可以把普通版本控制项目文件作为只读上下文，但不得使用本 Skill。
 
 ## 隐式触发范围
 

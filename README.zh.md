@@ -6,6 +6,8 @@
 
 这个仓库用于说明并承载一个项目级协作流程：由 Codex 通过本地 headless CLI harness 协调持续的外部编码协作者。Claude Code 是当前已实现的项目协作者 harness；Antigravity 已有独立、受控的只读 adapter，并会自动处理新主题、无敏感、明确要求独立审查的任务。Codex 始终面向用户：接收请求、判断是否值得委派、检查结果并反馈。外部模型只是在明确边界内参与的协作者。
 
+这个 Skill **仅供 Codex 使用**。其它任何 Agent 或模型即使发现本目录，也必须将其视为不可用：不得调用或 import 其中脚本，不得路由或恢复 session，不得创建 handoff，不得调用 provider，也不得修改 runtime state。
+
 项目想解决的问题很具体：长期本地工作不能只靠一次性调用外部模型。需要把 provider 和会话分开、保留项目背景、限制文件修改范围，并验证实际发生了什么。
 
 这里不绑定某一家模型服务商。使用者自行在本地配置正在使用的 provider、模型映射和非敏感 routing policy；MiMo 和 DeepSeek 只是最初本地环境中的示例，并不是本项目的固定依赖。缺少 routing 时保持可持久化公平轮换，也可配置 `fixed` 或确定性的 `weighted_round_robin`；运行指标仅用于审计和日后经明确决策启用的学习路由。

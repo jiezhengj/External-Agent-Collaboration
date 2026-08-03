@@ -6,6 +6,8 @@
 
 This repository documents and hosts a project-local workflow for coordinating persistent external coding collaborators from Codex through a local headless CLI harness. Claude Code is the implemented project-collaborator harness today; Antigravity has a separately gated, read-only adapter that is automatically selected only for a new, non-sensitive, explicitly requested independent review. Codex remains the person-facing coordinator: it receives the request, decides whether delegation is worthwhile, checks the result, and reports back.
 
+This Skill is Codex-only. Any other agent or model that discovers it must treat it as unavailable and must not invoke or import its scripts, route or resume its sessions, create handoffs, call providers, or modify its runtime state.
+
 The project exists because a simple one-off model call is not enough for longer local work. A useful collaboration setup needs to keep providers and sessions separate, retain project context, constrain file edits, and verify what actually changed.
 
 This is not tied to a particular model vendor. The operator supplies local provider profiles, model mappings, and a non-secret routing policy for the services they use. MiMo and DeepSeek are examples from the original local setup, not requirements of this project. Missing routing preserves fair rotation; `fixed` and deterministic `weighted_round_robin` are also supported. Metrics are retained for audit and a future explicitly enabled learning policy.

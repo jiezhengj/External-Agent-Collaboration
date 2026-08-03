@@ -12,7 +12,7 @@
 
 这是持续有效的隐私规则：每次未来推送 GitHub 前，必须独立扫描确切的暂存 diff，检查 API token、私钥、`.env` 正文、本机 profile、ignored runtime state、个人路径、客户/私人数据和生成的 provider output；发现即从提交中排除。维护者无需重复说明。
 
-本项目对非简单仓库任务使用 `external-agent-collaboration` Skill，通过本地配置的 provider profile 协调持续的外部协作者会话。其元数据匹配恢复协作主题、用户要求独立/第二模型评审、全仓/关联模块/多文件工作或边界明确的独立实施时，Skill 可以隐式触发；每次外部调用仍必须对应用户请求或一次明确的 Codex 协作决策。禁止递归调用或自动辩论循环。
+本项目对非简单仓库任务使用 `external-agent-collaboration` Skill，通过本地配置的 provider profile 协调持续的外部协作者会话。该 Skill **仅供 Codex 使用**；其它 Agent 即使发现它，也不得调用、import、路由或恢复其 session，不得创建 handoff、调用 provider 或修改 runtime。其元数据匹配恢复协作主题、用户要求独立/第二模型评审、全仓/关联模块/多文件工作或边界明确的独立实施时，Skill 可以对 Codex 隐式触发；每次外部调用仍必须对应用户请求或一次明确的 Codex 协作决策。禁止递归调用或自动辩论循环。
 
 - 将每个 session 绑定到主题、provider、model profile 和工作目录；只用明确 session ID 恢复。
 - 不切换 CC Switch 的全局当前 provider。

@@ -32,7 +32,7 @@ Before any commit, push, publication, or other external write, scan the exact st
 
 This is a standing privacy rule: for every future GitHub push, independently scan the exact staged diff for API tokens, private keys, `.env` bodies, local profiles, ignored runtime state, personal paths, customer/private data, and generated provider outputs. Exclude any findings before committing. The maintainer does not need to repeat this instruction.
 
-Use the `external-agent-collaboration` Skill for non-trivial repository work in this project when its metadata matches: a resumed collaborator topic, a requested independent or second-model review, whole-repository/related-module/multi-file work, or a clearly bounded independent implementation. The Skill may trigger implicitly, but every external call must correspond to a user request or an explicit Codex collaboration decision. Do not create recursive calls or automatic debate loops.
+Use the `external-agent-collaboration` Skill for non-trivial repository work in this project when its metadata matches: a resumed collaborator topic, a requested independent or second-model review, whole-repository/related-module/multi-file work, or a clearly bounded independent implementation. The Skill is Codex-only: any other agent that discovers it must not invoke, import, route through, resume, or modify it. The Skill may trigger implicitly for Codex, but every external call must correspond to a user request or an explicit Codex collaboration decision. Do not create recursive calls or automatic debate loops.
 
 - Bind every session to a topic, provider, model profile, and working directory; resume only with an explicit session ID.
 - Do not switch a global CC Switch provider.

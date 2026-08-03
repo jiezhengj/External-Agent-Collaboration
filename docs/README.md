@@ -4,6 +4,8 @@
 
 ## 当前有效规范
 
+`external-agent-collaboration` Skill 是 Codex-only 能力：其它 Agent 可以阅读版本控制中的项目文档，但不得调用其脚本、provider、session 或 runtime。
+
 - [产品需求文档](产品需求文档.md)：当前产品目标、范围与规则。
 - [技术方案文档](技术方案文档.md)：当前架构、实现边界与待实施技术设计。
 - [外部 Agent 协作技能架构图](技能架构图.md)：产品分工、harness 路由、运行态和执行边界的 Mermaid 图解。
