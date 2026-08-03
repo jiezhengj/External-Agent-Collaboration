@@ -19,6 +19,16 @@ PORTABLE = {
 }
 
 
+def validate_public_shared_profile(path: Path) -> None:
+    data = profile_support.read_json(path)
+    providers = profile_support.provider_map(data, path.name)
+    for provider, profile in providers.items():
+        profile_support.validate_shared_profile(provider, profile)
+    routing = profile_support.routing_config(data, path.name) or profile_support.default_routing()
+    normalized = profile_support.validate_routing_policy(routing, set(providers))
+    assert normalized["default"]["strategy"] == "fair_round_robin"
+
+
 def expect_error(value, message: str) -> None:
     try:
         value()
@@ -29,6 +39,10 @@ def expect_error(value, message: str) -> None:
 
 
 def main() -> None:
+    project_root = Path(__file__).resolve().parents[4]
+    validate_public_shared_profile(project_root / ".ai-collaboration" / "providers.shared.json")
+    validate_public_shared_profile(project_root / ".ai-collaboration" / "providers.shared.example.json")
+
     default = profile_support.validate_routing_policy(profile_support.default_routing(), PROVIDERS)
     assert default["default"]["strategy"] == "fair_round_robin"
 

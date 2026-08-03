@@ -1,5 +1,12 @@
 {
   "schema_version": 1,
+  "routing": {
+    "schema_version": 1,
+    "default": {
+      "strategy": "fair_round_robin"
+    },
+    "task_overrides": {}
+  },
   "providers": {
     "mimo": {
       "config_dir_relative_to_home": ".claude-mimo",

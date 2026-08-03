@@ -23,6 +23,12 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Check local control plane and public routing schema
+        run: |
+          python .agents/skills/external-agent-collaboration/scripts/bootstrap.py --init
+          python .agents/skills/external-agent-collaboration/scripts/bootstrap.py --check
+          python .agents/skills/external-agent-collaboration/scripts/doctor.py --routing --json
+
       - name: Run dependency-free regression suite
         run: python .agents/skills/external-agent-collaboration/scripts/run_regression.py
 
