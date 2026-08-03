@@ -24,3 +24,17 @@ Supported types:
 - `json_schema`: validates a local JSON file with the supported subset: `type`, `const`, `enum`, `required`, `properties`, `additionalProperties`, `items`, `minItems`, `maxItems`, `minLength`, and `pattern`.
 
 Use project-relative, non-sensitive paths. The executor restores the entire task change set when any expected outcome fails. Keep validation commands narrow and read-only where possible. Do not use platform-specific commands such as `true`, `touch`, or `chmod` in portable outcomes.
+
+## Multi-run Goal usage
+
+Expected outcomes are Run-level evidence. A successful outcome closes neither a persistent topic nor a Goal by itself. The [Goal contract example](goal-contract.example.json) wraps these entries with unique criterion IDs such as `artifact`, `macos-validation` and `windows-validation`, then aggregates the results across Runs.
+
+For Goal aggregation:
+
+- every required criterion must map to one or more supported outcomes, an explicit `user_acceptance`, or a required `review`;
+- a missing, stale, failed or unknown outcome is not a pass;
+- a platform criterion must be verified on that platform; one platform's result cannot substitute for another;
+- a `not_applicable` criterion requires a recorded reason and evidence;
+- `completed` means only that this Run passed its declared outcomes, scope check and validation commands.
+
+The current runner accepts the Run-level schema above. When `--goal-contract` is supplied, it also parses Goal criteria and aggregates Goal state into `.ai-collaboration/goals/<goal_id>.json`. `--topic-goal` and `--stop-rule` remain descriptive topic-state fields rather than machine-checked closure rules.

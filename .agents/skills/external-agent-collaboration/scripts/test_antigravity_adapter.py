@@ -68,14 +68,14 @@ def main() -> None:
     assert "--dangerously-skip-permissions" in full_auto_argv
     captured: dict[str, object] = {}
 
-    def fake_run(*_args: object, **kwargs: object) -> object:
+    def fake_bounded(*_args: object, **kwargs: object) -> object:
         captured.update(kwargs)
-        return type("Completed", (), {"returncode": 0, "stdout": "{}", "stderr": ""})()
+        return type("Result", (), {"returncode": 0, "stdout": "{}", "stderr": "", "timed_out": False})()
 
-    with patch("antigravity_adapter.subprocess.run", side_effect=fake_run):
+    with patch("antigravity_adapter.run_bounded", side_effect=fake_bounded):
         adapter.invoke(AntigravityInvocation("agy", "review", Path.cwd(), {}, 10, SCHEMA, {"mode": "plan"}))
     assert captured["timeout"] == 10 + adapter.PROCESS_TIMEOUT_GRACE_SECONDS
-    with patch("antigravity_adapter.subprocess.run", side_effect=fake_run):
+    with patch("antigravity_adapter.run_bounded", side_effect=fake_bounded):
         adapter.invoke(AntigravityInvocation("agy", "review", Path.cwd(), {}, 0, SCHEMA, {"mode": "plan"}))
     assert captured["timeout"] is None
     print("antigravity-adapter tests passed")

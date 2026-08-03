@@ -8,7 +8,7 @@ This repository documents and hosts a project-local workflow for coordinating pe
 
 The project exists because a simple one-off model call is not enough for longer local work. A useful collaboration setup needs to keep providers and sessions separate, retain project context, constrain file edits, and verify what actually changed.
 
-This is not tied to a particular model vendor. The operator supplies local provider profiles and model mappings for the services they use. MiMo and DeepSeek are examples from the original local setup, not requirements of this project. The current starter policy fairly rotates equally healthy, eligible providers; metrics are retained for audit and a future explicitly enabled learning policy.
+This is not tied to a particular model vendor. The operator supplies local provider profiles, model mappings, and a non-secret routing policy for the services they use. MiMo and DeepSeek are examples from the original local setup, not requirements of this project. Missing routing preserves fair rotation; `fixed` and deterministic `weighted_round_robin` are also supported. Metrics are retained for audit and a future explicitly enabled learning policy.
 
 ## Functional requirements
 
@@ -17,7 +17,7 @@ The workflow is designed to provide the following behavior.
 1. **One entry point and proactive selection.** Users work with Codex. When globally discoverable, the Skill proactively matches a resumed collaborator topic, a requested independent or second-model review, whole-repository/related-module/multi-file work, or a clearly bounded independent implementation. An external collaborator is used only after local provider configuration and post-selection classification permit it; simple questions, routine reviews, and small single-file changes stay with Codex.
 2. **Separate persistent sessions.** A session is bound to a topic, provider, model profile, and working directory. Recovery uses a saved session ID, never an ambiguous “latest session” option.
 3. **Task-aware delegation.** Before a call, classify the request by task type, work mode, risk, context size, and required tools. Small requests stay with Codex; current information, connected services, images, spreadsheets, presentations, PDFs, and final formatted office files use native Codex tools.
-4. **Fair routing and bounded availability fallback.** Non-sensitive text and scoped code work on new topics fairly rotate among healthy providers. Only billing, authentication, endpoint, or transient service failures open a cooldown and may trigger one alternate-provider call.
+4. **Configurable routing and bounded availability fallback.** New-topic work selects healthy providers from the shared/local routing policy; missing configuration preserves fair rotation, while `fixed` and integer-weight deterministic rotation are supported. Only billing, authentication, endpoint, or transient service failures open a cooldown and may trigger one alternate-provider call.
 5. **Bounded external edits.** An implementation handoff must state the allowed paths, forbidden paths, allowed commands, acceptance checks, and expected output.
 6. **Machine-checked completion.** A model saying “done” is not success. Expected outcomes may require a file to exist, contain exact text, satisfy a limited JSON Schema, change a bounded number of paths, or pass an explicitly approved validation command.
 7. **Capability-aware file creation.** A fresh session's ability to use `Write` is measured separately from an older resumed session's initial tool set. When a resumed session lacks a needed tool, the preferred resolution is a tracked fork; an exact shell fallback is a last resort.
@@ -32,7 +32,7 @@ The project-local Skill includes these parts:
 | Part | Responsibility |
 | --- | --- |
 | Task classifier | Decide direct, native-Codex, external, or prohibited handling. |
-| Provider router | Resume a saved session or fairly rotate healthy providers, with local availability cooldowns. |
+| Provider router | Resume a saved session or select healthy providers from routing policy, with local cursor/weighted state and availability cooldowns. |
 | Collaboration executor | Invoke the local CLI with isolated provider configuration and constrained permissions. |
 | Outcome evaluator | Validate real files and commands; restore invalid or out-of-scope changes. |
 | Capability probe | Test fresh-session tools when file creation is required or capability data is stale. |
@@ -83,17 +83,27 @@ Direct tokens in configuration files are the supported default. A legacy shared 
 
 Use `bootstrap.py --check` to verify only file and directory setup. It deliberately does not validate credential values.
 
+To change normal routing for new topics, add a non-secret policy to `providers.shared.json` or the current platform-local file. For example, to use MiMo as the fixed primary:
+
+```json
+{"routing":{"schema_version":1,"default":{"strategy":"fixed","provider":"mimo"},"task_overrides":{}}}
+```
+
+You can instead use `weighted_round_robin` with `weights`. Run `doctor.py --routing --json` to validate the effective policy without reading or printing credentials; remove `routing` to restore fair rotation.
+
 ## Suggested workflow
 
 1. Read the local project context, current state, and recorded decisions.
 2. Write a small, non-sensitive handoff instead of copying an entire chat transcript.
 3. Classify the task and stop if its content is sensitive or prohibited for delegation.
-4. Select an existing exact session, a user-named provider, or fairly rotate among healthy providers with the persistent local cursor.
+4. Select an existing exact session, a user-named provider, or apply the top-level routing policy; missing configuration uses the persistent fair-rotation cursor.
 5. For file edits, declare the smallest allowed paths and one or more machine-checkable expected outcomes.
 6. Run the external collaborator through an isolated local profile.
 7. Inspect the generated result, changed paths, outcomes, and required validation results in Codex.
 8. For high-risk work, request at most one independent read-only critique.
 9. Update anonymized quality and adoption metadata only after there is real evidence.
+
+`completed` above is a single Run result, not an automatic completion signal for a persistent Goal. For multi-run work, pass `--goal-contract <project-relative-json>` to `collaborate.py`; aggregation is persisted in `.ai-collaboration/goals/<goal_id>.json`, while human acceptance, review, blocking, and cancellation use `goal_lifecycle.py`. Even with Goal mode enabled, Codex must not declare `achieved` from model text or a free-text stop rule alone.
 
 ## Important precautions
 
@@ -114,6 +124,8 @@ Each profile should supply only what the local CLI needs: an isolated configurat
 ## How to contribute
 
 When the workflow is implemented or changed, update the Skill instructions, tests, design documents, and this README together. New behavior should be demonstrated by local regression tests before it is treated as reliable. Every change records macOS and Windows impact and validates both platforms, or gives a concrete not-affected rationale. Real provider checks should use minimal, non-sensitive tasks and be run deliberately because they consume the configured service.
+
+Run the unified local regression with `python3 .agents/skills/external-agent-collaboration/scripts/run_regression.py` on macOS/Linux or `py -3 .agents/skills/external-agent-collaboration/scripts/run_regression.py` on Windows. The same entry point runs on both host types in `.github/workflows/cross-platform-regression.yml`.
 
 ## Status
 

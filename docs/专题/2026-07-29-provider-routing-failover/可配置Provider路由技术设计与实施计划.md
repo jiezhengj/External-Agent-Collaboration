@@ -1,12 +1,12 @@
 # 可配置 Provider 路由策略：技术设计与实施计划
 
-- 状态：proposed，尚未实施
+- 状态：in progress；P0-P3 已实施，P4 双平台/真实验证待完成
 - 所属专题：[Provider 路由、故障切换与 Claude Code 模型职责](README.md)
 - 编写日期：2026-08-03
 - 适用平台：macOS、Windows
 - 目标版本：`routing schema v1`、provider router compatibility release
 
-本文把当前写死在代码中的 Provider 选择策略抽离为非敏感配置，并给出可直接执行的实施顺序、兼容策略、状态迁移、测试矩阵和回滚方案。实施完成前，系统的实际行为仍以当前源码为准：新主题在健康候选 provider 间按持久化 cursor 公平轮换。
+本文把当前写死在代码中的 Provider 选择策略抽离为非敏感配置，并给出可直接执行的实施顺序、兼容策略、状态迁移、测试矩阵和回滚方案。当前源码已实现 P0-P3：缺少 routing 时保持旧公平轮换；存在 routing 时按配置选择策略。P4 的 Windows CI/主机运行和最小真实 smoke 仍是发布门槛。
 
 ## 1. 决策摘要
 
@@ -366,7 +366,7 @@ current[selected] -= sum(configured_weight)
 
 - 定义 policy 数据结构和策略常量；
 - `resolve_policy(config, task_type, mode)`：task override 优先，否则 default，否则 fair；
-- `eligible_candidates(...)`：统一应用 provider readiness、health 和 policy candidate 规则；
+- 候选集由 `collaborate.py` / `batch_worker.py` 在进入 resolver 前统一应用 provider trust、readiness 和 health 过滤；`provider_routing.py` 只接收已经过安全筛选的候选 provider，不重复读取凭据或 health 状态；
 - `choose_fair(...)`、`choose_fixed(...)`、`choose_weighted(...)`：实现三个策略；
 - `choose_provider(...)`：保留旧调用签名的兼容包装，默认调用 fair，逐步把新调用迁到显式 policy 参数；
 - `route_basis` 增加可审计值，例如 `configured_fixed`、`configured_weighted_rotation`、`configured_default_fair_rotation`；
@@ -387,7 +387,7 @@ current[selected] -= sum(configured_weight)
 
 ### 6.4 `batch_worker.py`
 
-批处理 worker 当前直接调用 fair `choose_provider()`，必须改为使用同一 routing config resolver，否则用户会遇到“普通调用按配置、batch 仍按公平轮换”的隐性分叉：
+实施前的批处理 worker 曾直接调用 fair `choose_provider()`，会造成“普通调用按配置、batch 仍按公平轮换”的隐性分叉。当前实现已改为使用同一 routing config resolver，并由 `select_provider()` 统一覆盖：
 
 - `--provider auto` 使用当前 routing default 或 `data:analyze` override；
 - `--provider <key>` 仍然是显式覆盖；

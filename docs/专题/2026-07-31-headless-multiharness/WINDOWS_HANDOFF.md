@@ -9,7 +9,7 @@ Windows Codex 应直接运行本机诊断、测试、fingerprint trust 刷新和
 ## 已完成基线
 
 - Claude runner 不传顶层 `--model`；DeepSeek/MiMo 的内部模型映射由隔离 CC Switch profile 负责。
-- Claude Code 新主题只在健康 DeepSeek/MiMo 间公平轮换；`route_harness.py` 只会将明确、无敏感、无历史的只读独立审查自动交给 ready Antigravity，后者不参与轮换。
+- Claude Code 新主题在健康 DeepSeek/MiMo 间按顶层 routing policy 选择；缺少配置时公平轮换。`route_harness.py` 只会将明确、无敏感、无历史的只读独立审查自动交给 ready Antigravity，后者不参与 provider routing。
 - `ClaudeCodeAdapter` 已支持 native `--json-schema`、`structured_output`、精确 `--resume` 与 opt-in `--stream-diagnostics`。
 - `AntigravityAdapter` 只允许 `consult`/`critique` 与已有 session 的 `continue` + `--mode plan`，保存 `conversation_id`，不使用 `--dangerously-skip-permissions`。
 - macOS 已完成两套真实 smoke。不得复制或恢复 macOS 的 session、trust、capability 或 profile 到 Windows。

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -45,6 +46,20 @@ def main() -> None:
                 assert "Keychain authentication is unavailable" in str(exc)
             else:
                 raise AssertionError("Non-macOS Keychain profile must be rejected before invocation.")
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "providers.shared.json").write_text(json.dumps({
+            "schema_version": 1,
+            "routing": {"default": {"strategy": "fixed", "provider": "provider_a"}},
+            "providers": {"provider_a": {"config_dir_relative_to_home": ".claude-a", "launcher": "claude", "environment": {}}},
+        }), encoding="utf-8")
+        original_root, original_argv = doctor.CONTROL_ROOT, sys.argv
+        doctor.CONTROL_ROOT = root
+        sys.argv = ["doctor.py", "--routing", "--json"]
+        try:
+            assert doctor.main() == 0
+        finally:
+            doctor.CONTROL_ROOT, sys.argv = original_root, original_argv
     print("doctor tests passed")
 
 

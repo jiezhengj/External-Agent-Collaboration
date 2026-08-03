@@ -37,7 +37,7 @@ Use the `external-agent-collaboration` Skill for non-trivial repository work in 
 - Bind every session to a topic, provider, model profile, and working directory; resume only with an explicit session ID.
 - Do not switch a global CC Switch provider.
 - Do not pass a runner-level `--model`; provider-internal model aliases remain the isolated Claude Code/CC Switch profile's responsibility.
-- For an auto-selected new topic, fairly rotate healthy eligible providers. Cross-provider fallback is limited to one classified availability failure; do not fail over for task, contract, outcome, or scope failure.
+- For an auto-selected new topic, load the non-sensitive top-level `routing` policy: missing routing preserves fair rotation, while `fair_round_robin`, `fixed`, and deterministic `weighted_round_robin` are supported. Explicit provider/session precedence, trust, readiness, health, permissions, outcomes, and one availability-only fallback remain enforced; do not fail over for task, contract, outcome, or scope failure.
 - A real provider invocation requires a current fingerprinted record in `trusted-providers.local.json`; under the maintainer's default execution authorization above, create or refresh this non-secret local record automatically when the configured profile changes. This project gate does not bypass Codex platform egress approval.
 - Do not send secrets, `.env` content, credentials, customer data, private keys, or unrelated private files to an external model.
 - Allow external file edits only within the authorized scope. Do not allow commits, pushes, deployments, publishing, Git-history changes, global installs, or destructive infrastructure operations.

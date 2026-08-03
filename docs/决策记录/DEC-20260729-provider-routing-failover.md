@@ -23,4 +23,4 @@ Claude Code 内部子代理不作为 Codex 的独立路由、脱敏、探测或�
 
 ## 后果与证据
 
-新增 `provider_health.py`、`test_provider_health.py`、`trust_provider.py` 与 provider trust 回归，并修改 runner、路由器、profile 示例与双语规则。验证以 fake/local 回归覆盖公平轮换、冷却、活跃 session 可用性切换、不传 `--model`、profile 信任失效和 `dontAsk` 拒绝状态；未执行新的真实 provider 调用。
+新增 `provider_health.py`、`test_provider_health.py`、`trust_provider.py` 与 provider trust 回归，并修改 runner、路由器、profile 示例与双语规则。后续已在同一决策边界内将正常路由策略配置化为 shared/local/platform local 顶层 `routing`，支持 fair/fixed/weighted 三种确定性策略；旧 fair cursor、health/failover、session 优先级和不传 `--model` 语义保持兼容。当前 macOS fake/local 回归通过，Windows CI/主机运行和新的真实 provider 调用仍未完成。

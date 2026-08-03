@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from platform_support import macos_keychain_supported, macos_keychain_unavailable_message
-from profile_support import ProfileConfigError, environment_token, load_profiles as load_profile_documents, profile_file_paths
+from profile_support import ProfileConfigError, environment_token, load_profiles as load_profile_documents, load_routing, profile_file_paths
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -75,12 +75,36 @@ def check(provider: str) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True, help="Provider key from providers.shared.json or providers.local.json")
+    parser.add_argument("--provider", help="Provider key from providers.shared.json or providers.local.json")
+    parser.add_argument("--routing", action="store_true", help="Validate and display the non-sensitive routing policy")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+    if bool(args.provider) == args.routing:
+        parser.error("provide exactly one of --provider or --routing")
     try:
+        if args.routing:
+            profiles = load_profiles()
+            routing = load_routing(CONTROL_ROOT, provider_keys=set(profiles))
+            payload = {
+                "routing": routing,
+                "provider_keys": sorted(profiles),
+                "ok": True,
+            }
+            if args.json:
+                print(json.dumps(payload, ensure_ascii=False))
+            else:
+                print("Routing policy is valid:", routing["default"]["strategy"])
+            return 0
         problems = check(args.provider)
     except ValueError as exc:
+        if args.routing:
+            payload = {"routing": None, "ok": False, "problems": [str(exc)]}
+            if args.json:
+                print(json.dumps(payload, ensure_ascii=False))
+            else:
+                print("Routing policy is invalid:", file=sys.stderr)
+                print(f"- {exc}", file=sys.stderr)
+            return 2
         problems = [str(exc)]
     payload = {"provider": args.provider, "ok": not problems, "problems": problems}
     if args.json:

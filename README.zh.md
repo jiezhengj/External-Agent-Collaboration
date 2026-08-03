@@ -8,14 +8,14 @@
 
 项目想解决的问题很具体：长期本地工作不能只靠一次性调用外部模型。需要把 provider 和会话分开、保留项目背景、限制文件修改范围，并验证实际发生了什么。
 
-这里不绑定某一家模型服务商。使用者自行在本地配置正在使用的 provider 和模型映射；MiMo 和 DeepSeek 只是最初本地环境中的示例，并不是本项目的固定依赖。对同等健康且均适合外部协作的 provider，当前 starter policy 使用可持久化的公平轮换；运行指标仅用于审计和日后经明确决策启用的学习路由。
+这里不绑定某一家模型服务商。使用者自行在本地配置正在使用的 provider、模型映射和非敏感 routing policy；MiMo 和 DeepSeek 只是最初本地环境中的示例，并不是本项目的固定依赖。缺少 routing 时保持可持久化公平轮换，也可配置 `fixed` 或确定性的 `weighted_round_robin`；运行指标仅用于审计和日后经明确决策启用的学习路由。
 
 ## 具体需求
 
 1. **统一入口与主动触发。** 用户只与 Codex 协作。全局可发现时，Skill 会主动匹配恢复协作主题、用户要求独立/第二模型评审、全仓/关联模块/多文件工作，以及边界明确的独立实施；仅在本地 provider 已配置且后续分类允许时引入外部协作者。简单问答、常规评审和小型单文件修改由 Codex 直接处理。
 2. **独立的持续会话。** 一个会话绑定主题、provider、模型 profile 和工作目录。恢复必须使用已保存的 session ID，不能使用含义不明确的“最近会话”。
 3. **按任务决定是否委派。** 调用前按任务类型、工作模式、风险、上下文规模和工具需求分类。小任务由 Codex 直接完成；当前信息、连接器、图片、表格、幻灯片、PDF 和最终格式化办公文件走 Codex 原生工具。
-4. **公平路由与可用性兜底。** 新主题的非敏感文本与限定范围代码工作在健康 provider 间公平轮换；provider 的余额、认证、端点或暂时服务故障才会熔断并至多切换另一家一次。
+4. **可配置路由与可用性兜底。** 新主题按 shared/local 顶层 routing policy 选择健康 provider；缺少配置时公平轮换，也可固定 provider 或按整数权重确定性轮换。provider 的余额、认证、端点或暂时服务故障才会熔断并至多切换另一家一次。
 5. **受控的外部修改。** 实施交接必须写明允许路径、禁止路径、允许命令、验收检查和预期产物。
 6. **机器检查完成性。** 模型说“完成”不等于完成。预期结果可要求文件存在、包含或等于指定内容、满足受限 JSON Schema、变更数量在范围内，或通过显式批准的验证命令。
 7. **按能力处理新建文件。** 新会话实测到的 `Write` 能力，与旧会话创建时的工具集分开处理。旧会话缺工具时优先创建可追溯 fork；精确 Shell 兜底只在必要时使用。
@@ -30,7 +30,7 @@
 |部分|职责|
 | --- | --- |
 |任务分类器|决定直接处理、Codex 原生处理、外部协作或禁止交接。|
-|Provider 路由器|恢复持续会话，或在健康 provider 间公平轮换；维护本地可用性冷却。|
+|Provider 路由器|恢复持续会话，按顶层 routing policy 选择健康 provider；维护本地 cursor、weighted state 和可用性冷却。|
 |协作执行器|以隔离 provider 配置调用本地 CLI，并施加受限权限。|
 |结果验证器|检查真实文件和命令；对越界或不合格变更进行恢复。|
 |能力探测器|需要新建文件或能力记录过期时，实测新会话工具。|
@@ -81,17 +81,27 @@ profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，
 
 使用 `bootstrap.py --check` 只检查文件和目录是否就绪；它刻意不验证凭证值。
 
+要改变新主题的正常路由，只需在 `providers.shared.json` 或当前平台 local 文件增加非敏感配置，例如固定使用 MiMo：
+
+```json
+{"routing":{"schema_version":1,"default":{"strategy":"fixed","provider":"mimo"},"task_overrides":{}}}
+```
+
+也可将 `strategy` 改为 `weighted_round_robin` 并提供 `weights`。`doctor.py --routing --json` 可在不读取或输出凭证的情况下检查生效策略；删除 `routing` 即恢复公平轮换。
+
 ## 建议使用流程
 
 1. 读取本地项目背景、当前状态和已确认决策。
 2. 编写一份简短且不含敏感内容的 handoff，不复制整段聊天记录。
 3. 分类任务；若内容敏感或禁止交接则停止。
-4. 恢复精确会话、使用用户指定 provider，或在健康 provider 间按持久化 cursor 公平轮换。
+4. 恢复精确会话、使用用户指定 provider，或按顶层 routing policy 在健康 provider 间选择；缺少配置时使用持久化 cursor 公平轮换。
 5. 涉及文件修改时，声明尽可能小的允许路径和至少一项机器可检查的预期结果。
 6. 使用隔离的本地 profile 运行外部协作者。
 7. 在 Codex 中检查结果、变更路径、outcomes 和规定验证的实际输出。
 8. 高风险任务最多增加一次独立只读审查。
 9. 只有已有真实证据时，才更新匿名质量和采纳指标。
+
+上述 `completed` 是单次 Run 的结果，不是持续 Goal 的自动完成信号。多轮任务可通过 `collaborate.py --goal-contract <project-relative-json>` 启用 Goal 聚合；状态写入 `.ai-collaboration/goals/<goal_id>.json`，人工验收、审查、阻塞和取消使用 `goal_lifecycle.py`。即使启用 Goal，也不能仅凭模型自述或自由文本 stop rule 宣布 `achieved`。
 
 ## 注意事项
 
@@ -112,6 +122,8 @@ profile 的 endpoint、模型映射、配置目录或非密钥环境改变后，
 ## 维护方式
 
 当流程落地或发生变更时，应同步更新 Skill 说明、测试、设计文档和本 README。新能力先通过本地回归测试，再视为可依赖。每项变更均要记录 macOS/Windows 影响并验证两端，或给出具体的不受影响理由。真实 provider 测试应使用最小、无敏感内容的任务，并有意识地执行，因为它会消耗已配置服务。
+
+本地回归使用统一入口：macOS/Linux 执行 `python3 .agents/skills/external-agent-collaboration/scripts/run_regression.py`，Windows 执行 `py -3 .agents/skills/external-agent-collaboration/scripts/run_regression.py`。同一入口也由 `.github/workflows/cross-platform-regression.yml` 在两类主机上执行。
 
 ## 当前状态
 

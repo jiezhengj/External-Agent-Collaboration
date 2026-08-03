@@ -1,0 +1,30 @@
+name: Cross-platform regression
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  scripts:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Run dependency-free regression suite
+        run: python .agents/skills/external-agent-collaboration/scripts/run_regression.py
+
+      - name: Check Git whitespace
+        run: git diff --check

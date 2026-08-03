@@ -17,7 +17,7 @@
 - 将每个 session 绑定到主题、provider、model profile 和工作目录；只用明确 session ID 恢复。
 - 不切换 CC Switch 的全局当前 provider。
 - runner 不传顶层 `--model`；provider 内部模型 alias 只由隔离的 Claude Code/CC Switch profile 负责。
-- 自动选择的新主题在健康且合格的 provider 间公平轮换。跨 provider 最多只对已归类的可用性故障兜底一次；任务、契约、outcome 或范围失败不得切换。
+- 自动选择的新主题读取非敏感的顶层 `routing` 策略：缺少配置时保持公平轮换，也支持 `fair_round_robin`、`fixed` 和确定性的 `weighted_round_robin`。显式 provider/session 优先级、trust、readiness、health、权限、outcome 和一次 availability-only 兜底仍必须满足；任务、契约、outcome 或范围失败不得切换。
 - 真实 provider 调用必须有 `trusted-providers.local.json` 中仍有效的指纹记录；如 profile 配置变化，按上述默认执行授权直接刷新这份非密钥本地记录。该项目内信任门不绕过 Codex 宿主平台的最终外发审批。
 - 不向外部模型发送密钥、`.env` 内容、凭证、客户数据、私钥或无关私人文件。
 - 外部文件修改只允许在授权范围内进行；禁止提交、推送、部署、发布、修改 Git 历史、全局安装和破坏性基础设施操作。

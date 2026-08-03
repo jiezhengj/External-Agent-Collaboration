@@ -4,7 +4,7 @@
 
 1. `route_harness.py` 先按精确 session、用户指定、handoff 敏感性、任务角色、当前 profile/trust/launcher readiness 与 workspace/platform identity 选择 harness。
 2. Antigravity 只在新主题/无历史、无敏感、明确独立审查、第二方案、反方意见或风险清单的 read-only `consult`/`critique` 中自动选择；已有 Antigravity session 只能 read-only `continue`。未就绪时报告 `antigravity_not_ready` 并交回 Codex，不得静默改投 Claude Code。
-3. 选定 Claude Code 后，用户指定 provider 优先；否则存在完全匹配的 active session 时恢复它；新主题在健康且合格的 DeepSeek/MiMo provider 间使用 `task_type:mode` 的持久化 cursor 公平轮换，`provider_metrics.json` 只记录审计元数据，不在当前 starter policy 中打破平局。
+3. 选定 Claude Code 后，用户指定 provider 优先；否则存在完全匹配的 active session 时恢复它；新主题读取 `providers.*.json` 顶层 routing，按 `task_type:mode` 命中 override/default，缺少配置时使用兼容性的 `fair_round_robin`。支持 `fixed` 和确定性的 `weighted_round_robin`；`provider_metrics.json` 只保存脱敏 cursor/weighted state 与审计元数据，不按质量分打破平局。
 4. 仅当自动选择的 Claude Code provider 出现已归类的 billing、authentication、endpoint、rate-limit、transport 或 server 可用性故障时，可故障转移一次；用户明确指定 provider 时不自动替换。任务、契约、outcome、超范围或实现失败不允许切换，也不触发跨 harness 替换。
 
 Skill 是否被隐式选中先由 `SKILL.md` 的触发元数据决定；任务分类只在选中后决定是否允许实际委派。`.ai-collaboration/provider-health.json` 只保存 failure kind、次数和 retry time，不保存 prompt、文件正文、token、URL query 或原始 stderr。billing/authentication/endpoint/configuration 冷却 24 小时；暂时故障按 5 分钟、15 分钟、1 小时、6 小时递增。无后台探测；到期后由下一次原本允许的调用恢复尝试。
@@ -49,6 +49,22 @@ bootstrap 创建但不覆盖 `project-context.md`、`decisions.md` 与 `topics/`
 - `needs_review`：越界变更已恢复、校验失败或关键结论尚未核验。
 - `failed`：CLI、profile、超时、协议或 expected outcome 错误；执行器恢复该次任务改动。
 - `blocked_by_permission`：`dontAsk` 拒绝了一项未预批准操作；不会在非交互 runner 中等待人工终端审批。
+
+## Goal 与 Run 的边界
+
+以上状态是单次 Run 状态，不是长期 Goal 状态。`completed` 只表示本轮 machine outcomes、范围检查和规定校验通过；它不能直接表示 Goal 已达成。一个 Goal 必须有带唯一 ID 的 required criteria、completion policy、stop policy 和 evidence 索引，并由跨 Run 的聚合规则判断。
+
+Goal 的状态只有：
+
+- `active`：仍有 required criterion 未通过，或存在待复核、待用户验收或待证据补齐事项。
+- `achieved`：全部 required criteria 通过，必需验证、review 和 user acceptance 完成，证据齐全且没有未解决的强制风险。
+- `blocked`：下一步依赖人工权限、外部状态或用户决策，当前没有安全替代路径；必须记录 blocker、责任方和解除条件。
+- `failed`：required criterion 已确认不可满足，或达到明确的不可继续/重试上限。
+- `cancelled`：用户明确取消。
+
+只有 `achieved`、`blocked`、`failed` 和 `cancelled` 是 Goal 终态；`needs_review`、单次 `failed` 和 `blocked_by_permission` 仍需由上层决定是继续、解除阻塞、重试还是结束。criterion、evidence、平台验证或验收结论缺失时，不得将 Goal 标为 `achieved`。macOS/Windows 均列为 required 时，两端必须分别有通过证据；`not_applicable` 必须有明确理由和证据。
+
+当前 runner 只有在传入 `--goal-contract` 时才启用 Goal schema 校验和自动聚合；`--topic-goal`、`--stop-rule` 和 topic state 仍只是持久化说明。Goal runtime 不会把 Run `completed` 或 topic state 的 `completed` 自动解释为 Goal `achieved`。
 
 ## 一次性独立审查
 

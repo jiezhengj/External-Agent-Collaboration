@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from claude_code_adapter import ClaudeCodeAdapter, ClaudeCodeAdapterError, ClaudeInvocation
+from goal_lifecycle import GoalError, default_state_path, ensure_can_start_run, load_contract, load_state, record_run, save_state, state_summary
 from harness_state import CLAUDE_CODE, RUNTIME_SCHEMA_VERSION, claude_session_record, external_session_id, session_harness, state_feature_enabled
 from platform_support import (
     capability_matches_host,
@@ -30,9 +32,9 @@ from platform_support import (
     supports_posix_shell_fallback,
     workspace_identity,
 )
-from profile_support import ProfileConfigError, environment_token, load_profiles
+from profile_support import ProfileConfigError, environment_token, load_profiles, load_routing
 from provider_health import classify_failure, default_health, is_available, record_failure, record_success, status as provider_health_status, valid_health
-from provider_routing import append_event, choose_provider, valid_metrics
+from provider_routing import RoutingError, append_event, choose_provider, resolve_policy, valid_metrics
 from sensitivity import classify_sensitive_text
 
 
@@ -43,6 +45,7 @@ SESSIONS_FILE = CONTROL_ROOT / "sessions.json"
 METRICS_FILE = CONTROL_ROOT / "provider-metrics.json"
 HEALTH_FILE = CONTROL_ROOT / "provider-health.json"
 TOPICS_FILE = CONTROL_ROOT / "topics.json"
+GOALS_DIR = CONTROL_ROOT / "goals"
 SENSITIVE_PARTS = {".git", "secrets", "credentials", "private"}
 SENSITIVE_NAMES = {".env", "id_rsa", "id_ed25519"}
 CONTROL_PARTS = {".ai-collaboration", ".git"}
@@ -122,9 +125,23 @@ def load_json(path: Path, default: Any) -> Any:
 
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+        os.replace(temporary_path, path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def profiles() -> dict[str, dict[str, Any]]:
@@ -288,7 +305,7 @@ def allowed(rel: Path, paths: list[Path]) -> bool:
     return any(rel == candidate or candidate in rel.parents for candidate in paths)
 
 
-def select_provider(requested: str, topic: str, workdir: Path, sessions: list[dict[str, Any]], available: dict[str, dict[str, Any]], metrics: dict[str, Any], health: dict[str, Any], task_type: str, mode: str) -> tuple[str, dict[str, Any] | None, bool, dict[str, Any]]:
+def select_provider(requested: str, topic: str, workdir: Path, sessions: list[dict[str, Any]], available: dict[str, dict[str, Any]], metrics: dict[str, Any], health: dict[str, Any], task_type: str, mode: str, routing_config: dict[str, Any] | None = None) -> tuple[str, dict[str, Any] | None, bool, dict[str, Any]]:
     topic_matches = [
         item for item in sessions
         if item.get("status") == "active" and item.get("topic") == topic
@@ -316,8 +333,17 @@ def select_provider(requested: str, topic: str, workdir: Path, sessions: list[di
         raise CollaborationError("Multiple active sessions match topic/workdir; select a provider or --session-key.")
     candidates = healthy_providers(available, health)
     if not candidates:
-        raise CollaborationError("No configured provider is currently outside availability cooldown.")
-    chosen, route = choose_provider(metrics, candidates, task_type, mode)
+        raise CollaborationError("routing_no_healthy_candidate: No configured provider is currently outside availability cooldown.")
+    policy, _source = resolve_policy(routing_config, task_type, mode)
+    ready_candidates = [provider for provider in candidates if profile_problem(available[provider]) is None]
+    if policy.get("strategy") == "fixed" and policy.get("provider") not in ready_candidates:
+        raise CollaborationError(f"fixed_provider_unavailable: Fixed provider '{policy.get('provider')}' is not currently healthy and ready.")
+    if not ready_candidates:
+        raise CollaborationError("routing_no_healthy_candidate: No trusted provider has a ready profile outside availability cooldown.")
+    try:
+        chosen, route = choose_provider(metrics, ready_candidates, task_type, mode, routing_config)
+    except RoutingError as exc:
+        raise CollaborationError(str(exc)) from exc
     return chosen, None, True, route
 
 
@@ -383,6 +409,30 @@ def restore_changed(before: dict[str, str], after: dict[str, str], checkpoint: P
 
 def output_path(run_id: str, suffix: str) -> Path:
     return CONTROL_ROOT / suffix / f"{run_id}.json"
+
+
+def goal_contract_file(value: str) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise CollaborationError("Goal contract must be project-relative and contain no '..'.")
+    path = (PROJECT_ROOT / candidate).resolve()
+    rel = relative(path)
+    if is_sensitive(rel) or not path.is_file():
+        raise CollaborationError("Goal contract must be a readable, non-sensitive project JSON file.")
+    return path
+
+
+def goal_state_file(value: str | None, contract: dict[str, Any]) -> Path:
+    if value is None:
+        return default_state_path(GOALS_DIR.parent, contract["goal_id"])
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise CollaborationError("Goal state must be project-relative and contain no '..'.")
+    path = (PROJECT_ROOT / candidate).resolve()
+    rel = relative(path)
+    if is_sensitive(rel):
+        raise CollaborationError("Goal state may not target a sensitive path.")
+    return path
 
 
 def response_contract_instruction(return_mode: str, response_contract: str) -> str:
@@ -711,6 +761,8 @@ def return_payload(return_mode: str, record: dict[str, Any], output_rel: str, re
         "topic": record["topic"], "routing": record["routing"], "provider_health": record.get("provider_health"), "output_path": output_rel,
         "result_contract_failed": bool(contract_errors), "response_acceptance_failed": bool(record.get("response_acceptance_errors")),
     }
+    if record.get("goal") is not None:
+        common["goal"] = record["goal"]
     if return_mode == "debug":
         return record
     if return_mode == "file_only":
@@ -738,16 +790,19 @@ def topic_filename(topic: str) -> str:
     return f"{slug}-{digest}.md"
 
 
-def write_topic_state(topic: str, workdir: Path, goal: str | None, stop_rule: str | None, status: str, action: str, changed: list[str], output_rel: str) -> str:
+def write_topic_state(topic: str, workdir: Path, goal: str | None, stop_rule: str | None, status: str, action: str, changed: list[str], output_rel: str, goal_summary: dict[str, Any] | None = None) -> str:
     path = CONTROL_ROOT / "topics" / topic_filename(topic)
     scope = ", ".join(f"`{name}`" for name in changed[:12]) or "No project files changed in this run."
+    goal_line = ""
+    if isinstance(goal_summary, dict):
+        goal_line = f"- Goal state: `{goal_summary.get('goal_id')}` is `{goal_summary.get('status')}`; see `{goal_summary.get('state_path')}`.\n"
     text = f"""# Topic: {topic}
 
 - Goal: {one_line(goal or 'Continue the scoped work for this topic.', 600)}
 - Scope: {scope}
 - Decisions: Read `decisions.md` only when a confirmed decision is needed.
 - State: {status} after `{action}`.
-- Next: Inspect the recorded outcomes and continue only if the stop rule is not met.
+{goal_line}- Next: Inspect the recorded outcomes and continue only if the stop rule is not met.
 - Evidence: `{output_rel}`
 - Stop rule: {one_line(stop_rule or 'Complete the machine outcomes and resolve recorded exceptions.', 600)}
 """
@@ -761,7 +816,8 @@ def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdi
     results: list[dict[str, Any]] = []
     for item in outcomes:
         kind = item["type"]
-        result: dict[str, Any] = {"type": kind, "passed": False}
+        expected = {key: item[key] for key in ("type", "path", "text", "command", "argv", "min", "max", "schema") if key in item}
+        result: dict[str, Any] = {"type": kind, "passed": False, "expected": expected}
         try:
             if kind == "file_exists":
                 path = outcome_path(str(item["path"]))
@@ -843,6 +899,8 @@ def main() -> int:
     parser.add_argument("--harness-routing-basis", help=argparse.SUPPRESS)
     parser.add_argument("--topic-goal", help="Short durable goal for the one-page topic state; never include secrets or a full handoff.")
     parser.add_argument("--stop-rule", help="Short durable stop rule for the one-page topic state.")
+    parser.add_argument("--goal-contract", help="Project-relative Goal contract JSON; associates this Run with a persistent Goal.")
+    parser.add_argument("--goal-state", help="Optional project-relative Goal state JSON; defaults to .ai-collaboration/goals/<goal_id>.json.")
     args = parser.parse_args()
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     started_monotonic = time.monotonic()
@@ -850,6 +908,11 @@ def main() -> int:
     task_type = args.task_type or "planning"
     mode = args.mode or action_modes[args.action]
     log: dict[str, Any] = {"run_id": run_id, "started_at": now(), "action": args.action, "topic": args.topic, "task_type": task_type, "mode": mode, "return_mode": args.return_mode, "response_contract": args.response_contract, "harness_state_feature": state_feature_enabled(), "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}}
+    goal_contract: dict[str, Any] | None = None
+    goal_state_path: Path | None = None
+    goal_state: dict[str, Any] | None = None
+    goal_run_started = False
+    goal_recorded = False
     try:
         if args.timeout < 1:
             raise CollaborationError("--timeout must be positive.")
@@ -895,7 +958,22 @@ def main() -> int:
             validation_argvs.append(argv)
         outcomes = load_outcomes(Path(args.expected_outcomes).resolve()) if args.action == "execute" else []
         new_files = required_new_files(outcomes) if args.action == "execute" else []
+        if args.goal_state and not args.goal_contract:
+            raise CollaborationError("--goal-state requires --goal-contract.")
+        if args.goal_contract:
+            try:
+                contract_path = goal_contract_file(args.goal_contract)
+                goal_contract = load_contract(contract_path)
+                goal_state_path = goal_state_file(args.goal_state, goal_contract)
+                goal_state = load_state(goal_state_path, goal_contract, str(relative(contract_path)))
+                ensure_can_start_run(goal_state, goal_contract)
+            except (GoalError, OSError) as exc:
+                raise CollaborationError(str(exc)) from exc
         configured = profiles()
+        try:
+            routing_config = load_routing(CONTROL_ROOT, provider_keys=set(configured))
+        except ProfileConfigError as exc:
+            raise CollaborationError(str(exc)) from exc
         trust = trust_registry()
         available = trusted_profiles(configured, trust)
         if args.provider != "auto" and args.provider not in available:
@@ -916,7 +994,7 @@ def main() -> int:
             auto_selected = False
             route = {"basis": "explicit_session_key"}
         else:
-            provider, session, auto_selected, route = select_provider(args.provider, args.topic, workdir, sessions, available, metrics, health, task_type, mode)
+            provider, session, auto_selected, route = select_provider(args.provider, args.topic, workdir, sessions, available, metrics, health, task_type, mode, routing_config)
         if args.fork_session and (session is None or args.ephemeral):
             raise CollaborationError("--fork-session requires a resolved persistent active session and cannot be ephemeral.")
         profile = available.get(provider)
@@ -958,6 +1036,7 @@ def main() -> int:
             checkpoint = copy_checkpoint(run_id)
             before = manifest(PROJECT_ROOT)
         prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode, args.response_contract)
+        goal_run_started = goal_contract is not None
         exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout, args.stream_diagnostics, args.response_contract)
         log.update({"exit_code": exit_code, "stderr": one_line(stderr, 1200)})
 
@@ -1049,10 +1128,19 @@ def main() -> int:
         write_json(METRICS_FILE, metrics)
         output_file = output_path(run_id, "outputs")
         output_rel = str(output_file.relative_to(PROJECT_ROOT))
-        result_record = {"run_id": run_id, "status": status, "provider": provider, "harness": CLAUDE_CODE, "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors}
+        result_record = {"run_id": run_id, "status": status, "provider": provider, "harness": CLAUDE_CODE, "host_platform": host_platform(), "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors, "output_path": output_rel}
         if stream_summary is not None:
             result_record["stream_diagnostics"] = stream_summary
         write_json(output_file, result_record)
+        if goal_contract is not None and goal_state is not None and goal_state_path is not None:
+            try:
+                goal_state = record_run(goal_state, goal_contract, result_record)
+                save_state(goal_state_path, goal_state)
+                goal_recorded = True
+                result_record["goal"] = {"goal_id": goal_state["goal_id"], "status": goal_state["status"], "state_path": str(goal_state_path.relative_to(PROJECT_ROOT)), "summary": state_summary(goal_state)}
+                write_json(output_file, result_record)
+            except (GoalError, OSError) as exc:
+                raise CollaborationError(f"Goal aggregation failed: {exc}") from exc
         if not args.ephemeral and isinstance(result.get("session_id"), str):
             parent_key = session.get("key") if effective_fork and session else None
             if session is None or effective_fork:
@@ -1071,7 +1159,7 @@ def main() -> int:
             register_topic_session(topic_data, session, parent_key)
             write_json(TOPICS_FILE, topic_data)
         if not args.ephemeral:
-            result_record["topic_state_path"] = write_topic_state(args.topic, workdir, args.topic_goal, args.stop_rule, status, args.action, changed, output_rel)
+            result_record["topic_state_path"] = write_topic_state(args.topic, workdir, args.topic_goal, args.stop_rule, status, args.action, changed, output_rel, result_record.get("goal"))
             write_json(output_file, result_record)
         log["finished_at"] = now()
         log["result_contract"] = result_record["result_contract"]
@@ -1079,6 +1167,14 @@ def main() -> int:
         print(json.dumps(return_payload(args.return_mode, result_record, output_rel, response, contract_errors), ensure_ascii=False, indent=2))
         return 0 if status == "completed" else 3
     except CollaborationError as exc:
+        if goal_run_started and goal_contract is not None and goal_state is not None and goal_state_path is not None and not goal_recorded:
+            try:
+                failed_run = {"run_id": run_id, "status": "failed", "action": args.action, "host_platform": host_platform(), "output_path": str(output_path(run_id, "outputs").relative_to(PROJECT_ROOT)), "outcome_results": []}
+                goal_state = record_run(goal_state, goal_contract, failed_run)
+                save_state(goal_state_path, goal_state)
+                log["goal"] = state_summary(goal_state)
+            except (GoalError, OSError) as goal_exc:
+                log["goal_error"] = str(goal_exc)
         log.update({"status": "failed", "error": str(exc), "finished_at": now()})
         write_json(output_path(run_id, "logs"), log)
         print(str(exc), file=sys.stderr)

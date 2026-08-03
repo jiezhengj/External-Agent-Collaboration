@@ -11,7 +11,7 @@ import route_harness
 
 def args(**changes: object) -> argparse.Namespace:
     values: dict[str, object] = {
-        "action": "consult", "harness": "auto", "antigravity_profile": "antigravity_readonly", "request": "请给我第二方案", "provider": "auto", "topic": "review", "handoff": "docs/handoff.md", "working_directory": ".", "session_key": None, "fork_session": False, "allow_path": [], "allow_delete": [], "allow_binary_path": [], "allow_command": [], "expected_outcomes": None, "validation_command": [], "validation_argv": [], "task_type": "planning", "mode": "critique", "timeout": 120, "ephemeral": False, "return_mode": "compact", "response_contract": "standard", "expected_response": None, "stream_diagnostics": False, "topic_goal": None, "stop_rule": None,
+        "action": "consult", "harness": "auto", "antigravity_profile": "antigravity_readonly", "request": "请给我第二方案", "provider": "auto", "topic": "review", "handoff": "docs/handoff.md", "working_directory": ".", "session_key": None, "fork_session": False, "allow_path": [], "allow_delete": [], "allow_binary_path": [], "allow_command": [], "expected_outcomes": None, "validation_command": [], "validation_argv": [], "task_type": "planning", "mode": "critique", "timeout": 120, "ephemeral": False, "return_mode": "compact", "response_contract": "standard", "expected_response": None, "stream_diagnostics": False, "topic_goal": None, "stop_rule": None, "goal_contract": None, "goal_state": None,
     }
     values.update(changes)
     return argparse.Namespace(**values)
@@ -30,6 +30,14 @@ def main() -> None:
         assert selected == route_harness.CLAUDE_CODE and detail["basis"] == "default_project_collaborator"
         command = route_harness.claude_command(args(action="execute", request="implement this change", mode="execute"), detail["basis"])
         assert Path(command[1]).name == "collaborate.py" and "--harness-routing-basis" in command
+        goal_command = route_harness.claude_command(args(goal_contract="docs/goal.json", goal_state=".ai-collaboration/goals/goal.json"), detail["basis"])
+        assert "--goal-contract" in goal_command and "--goal-state" in goal_command
+        try:
+            route_harness.antigravity_command(args(goal_contract="docs/goal.json"), "explicit_independent_review")
+        except route_harness.collaborate.CollaborationError:
+            pass
+        else:
+            raise AssertionError("Antigravity must not silently drop Goal aggregation.")
         selected, detail = route_harness.choose_route(args(request="ordinary consultation"), "ordinary consultation", workdir, [])
         assert selected == route_harness.CLAUDE_CODE and detail["basis"] == "default_project_collaborator"
         session = {"key": "agy-session", "status": "active", "topic": "review", "harness": "antigravity", "working_directory": str(workdir), "workspace_identity": route_harness.collaborate.workspace_identity(workdir), "host_platform": route_harness.collaborate.host_platform()}

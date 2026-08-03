@@ -23,7 +23,7 @@ HARNESS_LOCAL = CONTROL / "harness-profiles.local.json"
 HARNESS_TRUST_EXAMPLE = CONTROL / "trusted-harnesses.local.example.json"
 HARNESS_TRUST_LOCAL = CONTROL / "trusted-harnesses.local.json"
 RUNTIME_DIRS = ("handoffs", "outputs", "logs", "snapshots", "archives", "reviews")
-DURABLE_DIRS = ("topics",)
+DURABLE_DIRS = ("topics", "goals")
 DURABLE_TEMPLATES = {
     "project-context.md": "# Project context\n\nKeep only stable collaboration background here. Link to project artifacts instead of copying their content.\n",
     "decisions.md": "# Confirmed collaboration decisions\n\nRecord only decisions that cannot be recovered from project artifacts, with evidence links. Do not store prompts, transcripts, or credentials.\n",

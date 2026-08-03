@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "goal_id": "example-goal-v1",
+  "success_criteria": [
+    {
+      "id": "artifact",
+      "required": true,
+      "verification": "file_exists",
+      "path": "docs/result.md"
+    },
+    {
+      "id": "macos-validation",
+      "required": true,
+      "verification": "command_succeeds",
+      "argv": ["python3", "-m", "unittest"],
+      "platform": "macos"
+    },
+    {
+      "id": "windows-validation",
+      "required": true,
+      "verification": "command_succeeds",
+      "argv": ["py", "-3", "-m", "unittest"],
+      "platform": "windows"
+    }
+  ],
+  "completion_policy": {
+    "require_all": true,
+    "review": "none",
+    "user_acceptance": "not_required",
+    "platforms": ["macos", "windows"]
+  },
+  "stop_policy": {
+    "max_attempts": 3,
+    "on_blocked": "pause"
+  }
+}

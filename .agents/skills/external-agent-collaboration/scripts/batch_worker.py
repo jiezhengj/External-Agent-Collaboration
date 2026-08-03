@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 import batch
 import collaborate
-from provider_routing import choose_provider, valid_metrics
+from profile_support import ProfileConfigError, load_routing
+from provider_routing import RoutingError, choose_provider, valid_metrics
 
 
 def prompt(records: list[dict[str, Any]]) -> str:
@@ -36,17 +37,33 @@ def parse_records(result: dict[str, Any], expected: list[dict[str, Any]]) -> lis
     return out
 
 
+def select_provider(requested: str, ready_candidates: list[str], metrics: dict[str, Any], routing_config: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Apply the shared routing policy to an auto-selected batch worker."""
+    if requested != "auto":
+        return requested, {"basis": "user_specified"}
+    try:
+        return choose_provider(metrics, ready_candidates, "data", "analyze", routing_config)
+    except RoutingError as exc:
+        raise batch.BatchError(str(exc)) from exc
+
+
 def run(args: argparse.Namespace) -> int:
     chunk=Path(args.chunk).resolve(); output=Path(args.output).resolve()
     batch.rel(chunk); batch.rel(output); batch.local_control_path(chunk); batch.local_control_path(output)
     records=batch.read_jsonl(chunk)
     if not records: raise batch.BatchError("Batch chunk is empty.")
     configured=collaborate.profiles()
+    try:
+        routing_config=load_routing(collaborate.CONTROL_ROOT, provider_keys=set(configured))
+    except ProfileConfigError as exc:
+        raise batch.BatchError(str(exc)) from exc
     available=collaborate.trusted_profiles(configured,collaborate.trust_registry())
     if args.provider=="auto":
         ready=sorted(key for key,value in available.items() if collaborate.profile_problem(value) is None)
-        provider,route=choose_provider(valid_metrics(collaborate.load_json(collaborate.METRICS_FILE,{"events":[]})),ready,"data","analyze")
-    else: provider,route=args.provider,{"basis":"user_specified"}
+        metrics=valid_metrics(collaborate.load_json(collaborate.METRICS_FILE,{"events":[]}))
+        provider,route=select_provider(args.provider,ready,metrics,routing_config)
+        collaborate.write_json(collaborate.METRICS_FILE, metrics)
+    else: provider,route=select_provider(args.provider,[],{},routing_config)
     profile=available.get(provider)
     if not profile or collaborate.profile_problem(profile): raise batch.BatchError("Configured provider is not ready.")
     code,stdout,stderr=collaborate.invoke(profile,"consult",prompt(records),collaborate.PROJECT_ROOT,None,True,False,[],args.timeout)

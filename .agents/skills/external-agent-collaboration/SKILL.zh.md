@@ -28,8 +28,9 @@
 4. 尊重用户指定的 provider；否则恢复精确匹配的活动会话；新主题使用 [协作协议](references/collaboration-protocol.md) 中的路由规则。大量非敏感文本先按 [batch 协议](references/batch-protocol.md) 生成并审阅 dry-run manifest，绝不使用一次大范围 `execute`。
 5. execute 需要新建文件/目录且能力记录缺失、超过七天、CLI/profile 变化或发生工具失败时，运行 `scripts/probe_capabilities.py --provider <provider>`。
 6. 同时检查 provider 能力记录和 session 的 `initial_toolset`。能力记录只描述同一主机平台上的新 session，旧 session 也不能直接套用。不同主机平台或 workspace identity 的 session 不得恢复。需要时 fork/new session；只有当前能力记录明确实测为 POSIX shell 时，才使用最小精确 Bash 创建白名单，否则安全停止。
-7. 将简洁 handoff 写入 `.ai-collaboration/handoffs/`。每个 execute 都必须按 [expected outcomes](references/expected-outcomes.md) 写 outcomes JSON。持续主题同时传入简短的 `--topic-goal` 和 `--stop-rule`，用于更新一页本地 topic 状态，而非保存 transcript。
-8. 不得加入 `.env` 内容、token、凭证、私钥、客户导出或无关私人文件。
+7. 将简洁 handoff 写入 `.ai-collaboration/handoffs/`。每个 execute 都必须按 [expected outcomes](references/expected-outcomes.md) 写 outcomes JSON。持续主题同时传入简短的 `--topic-goal` 和 `--stop-rule`，用于更新一页本地 topic 状态；需要跨多轮 Goal 聚合时，再传入 `--goal-contract`，而非保存 transcript。
+8. 将 Run 与 Goal 分开判断：Run `completed` 只表示本轮 outcomes、范围和验证通过，不表示长期 Goal `achieved`。传入 `--goal-contract` 可启用 contract 校验和跨 Run 聚合；人工验收、审查、阻塞、解除和取消使用 `goal_lifecycle.py`。不能从自由文本 stop rule 或 topic state 自动推导 Goal 已完成。
+9. 不得加入 `.env` 内容、token、凭证、私钥、客户导出或无关私人文件。
 
 ## 参考资料与平台约束
 
@@ -37,11 +38,15 @@
 
 每次迭代都必须明确考虑 macOS 与 Windows。变更必须记录平台影响，并给出两端验证或具体的“不受影响”理由；不得在 Windows 上假定 POSIX 路径、Bash、文件权限、launcher、shell 行为或凭据存储可用。
 
+仓库级回归统一使用 `scripts/run_regression.py`：macOS/Linux 用 `python3`，Windows 用 `py -3`；同一入口也由仓库的 macOS/Windows CI 矩阵执行。
+
 ## 调用与安全
 
 每个任务首次调用 Claude Code provider 前运行 `scripts/doctor.py --provider <provider>`；它不读取密钥值。ready 的 Antigravity P2 只读 profile 还必须通过 `scripts/doctor_harness.py --profile antigravity_readonly --json`，并具备 `trust_harness.py` 的当前指纹记录；`AGENTS.md` 中的持续授权允许在真实调用前直接建立或刷新该非密钥记录。
 
 新外部任务使用 `scripts/route_harness.py`，传入原始请求、handoff 和 action。它先恢复精确 session；否则只在新主题/无历史、无敏感、明确独立审查且为只读 `consult` 或 `critique`、profile ready 时自动选择 Antigravity。其余可委派任务都交给 Claude Code，DeepSeek/MiMo provider 路由仍只在 Claude Code 内运行。Antigravity 未就绪时明确报告并交回 Codex，绝不静默改投 Claude Code。`route_harness.py` 会拒绝 Antigravity 的 `execute`/`draft`、命令、outcomes、fork、full-auto profile 和非标准 response contract；它再调用 `collaborate.py` 或 `consult_antigravity.py`。只有调用方已明确完成路由决策时，才直接调用这两个入口。
+
+Claude Code 新主题的 provider policy 从 shared/local provider 文档顶层 `routing` 读取；缺少配置时保持 `fair_round_robin`，也可使用 `fixed` 或确定性的 `weighted_round_robin`。显式 provider/session、trust、ready、health、权限、outcome 和一次可用性兜底的优先级不变。
 
 `collaborate.py` 默认 `--return-mode compact`，stdout 至多返回 8 KiB 的 run/status/outcomes、受限摘要和本地 output 路径；完整 CLI JSON 只保留在 ignored 的 `.ai-collaboration/outputs/`。最外层严格匹配的 ` ```json ` fence 会在合约校验前剥离；若结果仍不合约但内容可用，不自动重复同一 consult，而是消费受限结果或按明确路径检查本地 output。需要受限 JSON 时用 `structured`，worker 用 `file_only`，仅排障时显式用 `debug`。Claude Code 的 execute 必须传入允许路径、expected outcomes、必要的 `--allow-command` 和 outcomes 使用的精确 `--validation-command`。
 

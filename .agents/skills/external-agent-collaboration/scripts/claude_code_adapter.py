@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-import subprocess
 from typing import Any
 
 from harness_state import CLAUDE_CODE, external_session_id
+from process_support import run_bounded
 from stream_diagnostics import StreamDiagnosticsError, parse_ndjson
 
 
@@ -89,13 +89,11 @@ class ClaudeCodeAdapter:
     def invoke(self, request: ClaudeInvocation) -> tuple[int, str, str]:
         environment = request.environment.copy()
         environment["CLAUDE_CONFIG_DIR"] = request.config_dir
-        try:
-            completed = subprocess.run(
-                self.command(request), cwd=request.workdir, env=environment,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=request.timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            return 124, exc.stdout or "", f"Timed out after {request.timeout}s"
+        completed = run_bounded(
+            self.command(request), cwd=request.workdir, env=environment, timeout=request.timeout,
+        )
+        if completed.timed_out:
+            return 124, completed.stdout, f"Timed out after {request.timeout}s"
         return completed.returncode, completed.stdout, completed.stderr
 
     @staticmethod

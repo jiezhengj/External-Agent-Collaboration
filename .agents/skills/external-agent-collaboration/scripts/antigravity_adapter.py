@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-import subprocess
 from typing import Any
 
 from harness_state import external_session_id
+from process_support import run_bounded
 from stream_diagnostics import StreamDiagnosticsError, parse_ndjson
 
 
@@ -68,10 +68,11 @@ class AntigravityAdapter:
         # process grace period so Python does not kill AGY while it is emitting
         # the terminal stream event or shutting down after that limit.
         process_timeout = request.timeout + self.PROCESS_TIMEOUT_GRACE_SECONDS if request.timeout > 0 else None
-        try:
-            completed = subprocess.run(self.command(request), cwd=request.workdir, env=request.environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=process_timeout)
-        except subprocess.TimeoutExpired as exc:
-            return 124, exc.stdout or "", f"Timed out after {request.timeout}s"
+        completed = run_bounded(
+            self.command(request), cwd=request.workdir, env=request.environment, timeout=process_timeout,
+        )
+        if completed.timed_out:
+            return 124, completed.stdout, f"Timed out after {request.timeout}s"
         return completed.returncode, completed.stdout, completed.stderr
 
     @staticmethod

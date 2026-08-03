@@ -103,6 +103,8 @@ def claude_command(args: argparse.Namespace, basis: str) -> list[str]:
     append_if(argv, "--expected-outcomes", args.expected_outcomes)
     append_if(argv, "--topic-goal", args.topic_goal)
     append_if(argv, "--stop-rule", args.stop_rule)
+    append_if(argv, "--goal-contract", args.goal_contract)
+    append_if(argv, "--goal-state", args.goal_state)
     for flag, values in (("--allow-path", args.allow_path), ("--allow-delete", args.allow_delete), ("--allow-binary-path", args.allow_binary_path), ("--allow-command", args.allow_command), ("--validation-command", args.validation_command), ("--validation-argv", args.validation_argv)):
         for value in values:
             argv.extend([flag, value])
@@ -115,7 +117,7 @@ def claude_command(args: argparse.Namespace, basis: str) -> list[str]:
 def antigravity_command(args: argparse.Namespace, basis: str) -> list[str]:
     if args.action not in READ_ONLY_ACTIONS:
         raise collaborate.CollaborationError("Antigravity automatic routing is limited to consult, critique, and an existing read-only continuation.")
-    if any((args.allow_path, args.allow_delete, args.allow_binary_path, args.allow_command, args.expected_outcomes, args.validation_command, args.validation_argv, args.fork_session)):
+    if any((args.allow_path, args.allow_delete, args.allow_binary_path, args.allow_command, args.expected_outcomes, args.validation_command, args.validation_argv, args.fork_session, args.goal_contract, args.goal_state)):
         raise collaborate.CollaborationError("Antigravity read-only routing does not accept execute paths, commands, outcomes, or fork-session.")
     if args.response_contract != "standard" or args.expected_response:
         raise collaborate.CollaborationError("Antigravity role routing requires the standard structured response contract.")
@@ -157,6 +159,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--stream-diagnostics", action="store_true")
     p.add_argument("--topic-goal")
     p.add_argument("--stop-rule")
+    p.add_argument("--goal-contract")
+    p.add_argument("--goal-state")
     return p
 
 
