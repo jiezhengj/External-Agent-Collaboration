@@ -30,7 +30,7 @@ Provider 自动选择原本只在 `provider_routing.py` 中实现公平轮换。
 
 ## 验收结果与外部运行条件
 
-- GitHub Actions run `30787705993` 的 `macos-latest` 与 `windows-latest` 均通过；后续新增缓冲 relay、终态 billing 归一化后需以最新 CI run 复核同一矩阵。
+- GitHub Actions run `30791528761` 的 `macos-latest` 与 `windows-latest` 均通过，覆盖新增缓冲 relay、终态 billing 归一化、Windows 适配器测试夹具和统一 34 脚本回归入口。
 - DeepSeek 真实只读 smoke `1785738096-02d58477` 通过：`stream-json` 终态、精确响应、零项目变更。
 - 自动路由真实 smoke `1785738286-26ba6796` 在 MiMo cooldown 后选择 DeepSeek 并通过，route basis 为配置的 `fair_round_robin`，健康候选数为 1。
 - MiMo 真实 smoke 已到达正确模型调用链，但 provider 返回账户余额不足；runner 已将终态归一化为 `billing` 并写入 24 小时 cooldown。账户充值/更换有效余额属于外部运行条件，不在代码实施范围内。

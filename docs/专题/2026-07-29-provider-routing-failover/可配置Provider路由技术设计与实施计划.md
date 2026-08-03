@@ -543,6 +543,8 @@ py -3 .agents/skills/external-agent-collaboration/scripts/test_batch_worker.py
 py -3 -m compileall .agents/skills/external-agent-collaboration/scripts
 ```
 
+实际验收证据：macOS 本地统一入口通过；GitHub Actions run `30791528761` 的 `macos-latest` 与 `windows-latest` 均通过。真实 provider 验证只在已配置且已信任的本机 profile 上执行：健康 DeepSeek 与自动路由 smoke 通过，MiMo 已到达正确调用链但因账户余额不足进入 `billing` cooldown。
+
 Windows 不能以 Bash、POSIX 绝对路径或 macOS 的 `CLAUDE_CONFIG_DIR` 验证代替；应使用临时 Windows home、Windows platform local fixture 和 Python 解释器本身执行 schema/route 回归。策略 JSON 和算法语义是平台无关的，平台差异只在 profile 路径、launcher、shell 和本地认证诊断。
 
 ### 9.6 文档和敏感性检查
