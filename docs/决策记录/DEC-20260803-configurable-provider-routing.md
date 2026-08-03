@@ -1,6 +1,6 @@
 # DEC-20260803-configurable-provider-routing
 
-- 状态：in_progress（P0-P3 已实现；双平台运行证据待完成）
+- 状态：accepted（实现、双平台 CI 与健康 provider 真实验证完成；MiMo billing 为外部运行条件）
 - 日期：2026-08-03
 - 受影响主文档：产品需求文档、技术方案文档、实施计划文档、测试用例文档、迭代记录
 - 关联专题：[TOPIC-20260729-provider-routing-failover](../专题/2026-07-29-provider-routing-failover/README.md)
@@ -28,9 +28,12 @@ Provider 自动选择原本只在 `provider_routing.py` 中实现公平轮换。
 - `doctor.py --routing --json`：只输出脱敏策略和 provider key。
 - `test_routing_config.py`、`test_provider_routing.py`、`test_collaborate_routing.py` 和全量 `run_regression.py`：macOS 本地通过。
 
-## 未完成与验收门槛
+## 验收结果与外部运行条件
 
-GitHub Actions 已配置 `macos-latest`/`windows-latest` 矩阵，但当前环境没有 Windows/`py -3`，尚未取得 Windows 主机或 CI 运行证据；在此证据产生前，本决策保持 `in_progress`，不能把专题标记为最终 accepted。
+- GitHub Actions run `30787705993` 的 `macos-latest` 与 `windows-latest` 均通过；后续新增缓冲 relay、终态 billing 归一化后需以最新 CI run 复核同一矩阵。
+- DeepSeek 真实只读 smoke `1785738096-02d58477` 通过：`stream-json` 终态、精确响应、零项目变更。
+- 自动路由真实 smoke `1785738286-26ba6796` 在 MiMo cooldown 后选择 DeepSeek 并通过，route basis 为配置的 `fair_round_robin`，健康候选数为 1。
+- MiMo 真实 smoke 已到达正确模型调用链，但 provider 返回账户余额不足；runner 已将终态归一化为 `billing` 并写入 24 小时 cooldown。账户充值/更换有效余额属于外部运行条件，不在代码实施范围内。
 
 ## 回滚
 

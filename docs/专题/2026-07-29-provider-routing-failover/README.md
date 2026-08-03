@@ -1,7 +1,7 @@
 # 专题：Provider 路由、故障切换与 Claude Code 模型职责
 
 - 标识：`TOPIC-20260729-provider-routing-failover`
-- 状态：**本地实现与 fake/local 回归完成；未新增真实 provider 验证**
+- 状态：**配置化路由已实施；macOS/Windows CI 通过；macOS 真实 smoke 通过；MiMo 当前因账户余额进入 billing cooldown**
 - 开始日期：2026-07-29
 - 讨论基线：当前 `external-agent-collaboration` Skill、CC Switch 的 DeepSeek/MiMo 隔离配置，以及本机 Claude Code `2.1.220`
 - 关联专题：[协作效能优化](../2026-07-29-协作效能优化/README.md)
@@ -15,7 +15,7 @@
 |用途|位置|使用规则|
 |---|---|---|
 |完整设计、状态机与验收|[方案](方案.md)|设计与已实施边界；当前规则以主文档和代码为准。|
-|配置化路由技术设计与实施计划|[可配置 Provider 路由技术设计与实施计划](可配置Provider路由技术设计与实施计划.md)|配置化策略的 schema、兼容迁移、实施顺序、测试和双平台验收；P0-P3 已实现，Windows 运行证据待补。|
+|配置化路由技术设计与实施计划|[可配置 Provider 路由技术设计与实施计划](可配置Provider路由技术设计与实施计划.md)|配置化策略的 schema、兼容迁移、实施顺序、测试和双平台验收；代码、CI 与真实健康-provider smoke 已完成。|
 |当前产品规则|[产品需求文档](../../产品需求文档.md)|实施后同步更新。|
 |当前技术设计|[技术方案文档](../../技术方案文档.md)|实施后同步更新。|
 |当前实施状态|[实施计划文档](../../实施计划文档.md)|实施任务与优先级以此为准。|
@@ -31,4 +31,6 @@
 5. 评分数据不足时，按预设的任务场景选择 provider；两家公开能力都覆盖、或不适合做厂商能力判断的场景，使用持久化的公平轮换，不以 provider 名称、厂商宣传或内部 Flash/Pro 名称打破平局。
 6. Claude Code 是否创建子代理、如何选择子代理模型与工具，是其 provider 内部行为；Codex 不单独路由、再脱敏、探测或周期复验子代理，只保留对 Claude Code 主进程的既有安全边界。
 
-已同步根 README 的中英文说明、`AGENTS.md` / `AGENTS.zh.md`、协议、主文档、决策记录、测试用例与迭代记录。验证证据见迭代记录；本轮没有新增真实 provider 调用。
+7. 已实施：profile 可显式选择 `response_transport: "direct"` 或 `"buffered_sse"`。当前 DeepSeek/MiMo endpoint 使用临时 loopback 内存缓冲 relay，以兼容 Claude Code 对 chunked SSE 的退出行为；relay 不落盘、不记录正文，删除该字段即可回到直连。
+
+已同步根 README 的中英文说明、`AGENTS.md` / `AGENTS.zh.md`、协议、主文档、决策记录、测试用例与迭代记录。验证证据见迭代记录：DeepSeek 真实 smoke 与自动路由 smoke 通过；MiMo 模型别名已修正，但当前真实账户余额不足，runner 已按 billing 正确熔断，不将其误报为代码成功。

@@ -244,6 +244,9 @@ def validate_shared_profile(provider: str, profile: dict[str, Any]) -> None:
     sensitive = [key for key in environment if any(marker in str(key).upper() for marker in ("TOKEN", "KEY", "SECRET", "PASSWORD"))]
     if sensitive:
         raise ProfileConfigError(f"Shared provider '{provider}' environment must not contain credential values.")
+    response_transport = profile.get("response_transport", "direct")
+    if response_transport not in {"direct", "buffered_sse"}:
+        raise ProfileConfigError(f"Shared provider '{provider}' response_transport must be 'direct' or 'buffered_sse'.")
 
 
 def platform_override(profile: dict[str, Any], platform: str) -> dict[str, Any]:
@@ -291,6 +294,8 @@ def load_profiles(control_root: Path) -> dict[str, dict[str, Any]]:
         combined = merge_profile(combined, local.get(provider, {}))
         combined = merge_profile(combined, platform_local.get(provider, {}))
         output[provider] = resolve_profile(combined)
+        if output[provider].get("response_transport", "direct") not in {"direct", "buffered_sse"}:
+            raise ProfileConfigError(f"Provider '{provider}' response_transport must be 'direct' or 'buffered_sse'.")
     return output
 
 

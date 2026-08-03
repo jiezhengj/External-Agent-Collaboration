@@ -65,6 +65,48 @@ def main() -> None:
         stream_argv = json.loads(argv_path.read_text(encoding="utf-8"))
         assert stream_argv[stream_argv.index("--output-format") + 1] == "stream-json" and "--verbose" in stream_argv
 
+        hanging_source = root / "hanging-claude.py"
+        hanging_source.write_text(
+            "import json, os, sys, time\n"
+            "payload = {'structured_output': {'summary': 'ok', 'changed_files': [], 'commands_run': [], 'validation_results': [], 'risks': [], 'uncertainty': 'None.'}}\n"
+            "format_name = sys.argv[sys.argv.index('--output-format') + 1]\n"
+            "if format_name == 'stream-json':\n"
+            "    payload = {'type': 'result', 'subtype': os.environ.get('HANG_SUBTYPE', 'success'), 'is_error': os.environ.get('HANG_IS_ERROR') == '1', **payload}\n"
+            "if os.environ.get('HANG_ERROR') == '1':\n"
+            "    payload = {'is_error': True, 'error': {'message': 'Insufficient account balance'}}\n"
+            "print(json.dumps(payload), flush=True)\n"
+            "if os.environ.get('HANG_EXIT') == '1':\n"
+            "    sys.exit(1)\n"
+            "time.sleep(5)\n",
+            encoding="utf-8",
+        )
+        if os.name == "nt":
+            hanging_launcher = root / "hanging-claude.cmd"
+            hanging_launcher.write_text(f'@echo off\r\n"{sys.executable}" "%~dp0hanging-claude.py" %*\r\n', encoding="utf-8")
+        else:
+            hanging_launcher = root / "hanging-claude"
+            hanging_launcher.write_text(f"#!{sys.executable}\n" + hanging_source.read_text(encoding="utf-8"), encoding="utf-8")
+            hanging_launcher.chmod(0o700)
+
+        def invoke_hanging(*, stream: bool, subtype: str = "success", is_error: bool = False, error: bool = False, exit_code: bool = False) -> tuple[int, str, str]:
+            return collaborate.CLAUDE_ADAPTER.invoke(collaborate.ClaudeInvocation(
+                launcher=str(hanging_launcher), prompt="test", workdir=root, config_dir=str(root),
+                environment={
+                    "HANG_SUBTYPE": subtype, "HANG_IS_ERROR": "1" if is_error else "0",
+                    "HANG_ERROR": "1" if error else "0", "HANG_EXIT": "1" if exit_code else "0",
+                },
+                tools=[], allowed_tools=[], disallowed_tools=[], timeout=1, stream_diagnostics=stream,
+            ))
+
+        code, stdout, stderr = invoke_hanging(stream=False)
+        assert code == 0 and stderr == "" and "structured_output" in stdout
+        code, stdout, stderr = invoke_hanging(stream=True)
+        assert code == 0 and stderr == "" and '"type": "result"' in stdout
+        code, _stdout, stderr = invoke_hanging(stream=True, subtype="error_during_execution", is_error=True)
+        assert code == 1 and "terminal error" in stderr and "Timed out" not in stderr
+        code, _stdout, stderr = invoke_hanging(stream=False, error=True, exit_code=True)
+        assert code == 1 and "category=billing" in stderr and "balance" not in stderr
+
     stream = "\n".join((
         json.dumps({"type": "system", "subtype": "init", "mcp_servers": ["safe-name"]}),
         json.dumps({"type": "rate_limit_event", "message": "retry scheduled"}),

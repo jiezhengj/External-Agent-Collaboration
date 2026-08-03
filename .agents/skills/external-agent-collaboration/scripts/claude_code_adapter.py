@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_state import CLAUDE_CODE, external_session_id
+from buffered_http_proxy import BufferedProviderProxy
 from process_support import run_bounded
 from stream_diagnostics import StreamDiagnosticsError, parse_ndjson
 
@@ -32,12 +33,23 @@ class ClaudeInvocation:
     fork_session: bool = False
     response_schema: dict[str, Any] | None = None
     stream_diagnostics: bool = False
+    response_transport: str = "direct"
 
 
 class ClaudeCodeAdapter:
     """Keep Claude CLI argv, outer JSON, and structured result semantics together."""
 
     name = CLAUDE_CODE
+    _ERROR_SUBTYPES = {"error", "failed", "failure"}
+    _ERROR_STATUSES = {"error", "failed", "failure"}
+    _TERMINAL_FAILURE_MARKERS = (
+        ("billing", ("insufficient balance", "insufficient account balance", "insufficient quota", "payment required", "billing", "http 402")),
+        ("authentication", ("invalid api key", "authentication", "unauthorized", "http 401", "http 403")),
+        ("endpoint", ("base url", "endpoint", "certificate verify", "ssl", "dns", "name or service not known")),
+        ("rate_limit", ("rate limit", "too many requests", "http 429")),
+        ("server", ("http 500", "http 502", "http 503", "http 504", "internal server error", "service unavailable")),
+        ("transport", ("timed out", "timeout", "connection reset", "connection refused", "network is unreachable")),
+    )
 
     @staticmethod
     def doctor(profile: dict[str, Any]) -> list[str]:
@@ -89,12 +101,91 @@ class ClaudeCodeAdapter:
     def invoke(self, request: ClaudeInvocation) -> tuple[int, str, str]:
         environment = request.environment.copy()
         environment["CLAUDE_CONFIG_DIR"] = request.config_dir
-        completed = run_bounded(
-            self.command(request), cwd=request.workdir, env=environment, timeout=request.timeout,
-        )
+        relay: BufferedProviderProxy | None = None
+        if request.response_transport == "buffered_sse":
+            upstream = environment.get("ANTHROPIC_BASE_URL")
+            relay = BufferedProviderProxy(upstream or "")
+            environment["ANTHROPIC_BASE_URL"] = relay.start()
+        elif request.response_transport != "direct":
+            raise ClaudeCodeAdapterError(f"Unsupported Claude response transport: {request.response_transport}")
+        try:
+            completed = run_bounded(
+                self.command(request), cwd=request.workdir, env=environment, timeout=request.timeout,
+            )
+        finally:
+            if relay is not None:
+                relay.close()
         if completed.timed_out:
+            terminal = self._terminal_from_output(completed.stdout, request.stream_diagnostics)
+            if terminal is not None:
+                if self._terminal_is_error(terminal):
+                    return 1, completed.stdout, self._terminal_error(terminal)
+                return 0, completed.stdout, completed.stderr
             return 124, completed.stdout, f"Timed out after {request.timeout}s"
+        terminal = self._terminal_from_output(completed.stdout, request.stream_diagnostics)
+        if terminal is not None and self._terminal_is_error(terminal):
+            return completed.returncode or 1, completed.stdout, self._terminal_error(terminal)
         return completed.returncode, completed.stdout, completed.stderr
+
+    @classmethod
+    def _terminal_from_output(cls, stdout: str, stream_diagnostics: bool) -> dict[str, Any] | None:
+        """Recover a complete CLI result when cleanup follows output completion.
+
+        Some Claude launchers keep a child process alive after writing the final
+        JSON/NDJSON event.  A bounded cleanup timeout must not turn an already
+        emitted result into a transport failure.  Invalid or partial output
+        deliberately returns ``None`` so the caller retains the real timeout.
+        """
+        try:
+            if stream_diagnostics:
+                return parse_ndjson(stdout, stream_kind="claude")[0]
+            return cls.parse_outer_result(stdout)
+        except (ClaudeCodeAdapterError, StreamDiagnosticsError):
+            return None
+
+    @classmethod
+    def _terminal_is_error(cls, terminal: dict[str, Any]) -> bool:
+        if terminal.get("is_error") is True:
+            return True
+        error = terminal.get("error")
+        errors = terminal.get("errors")
+        if (isinstance(error, dict) and bool(error)) or (isinstance(error, str) and bool(error.strip())) or (isinstance(errors, list) and bool(errors)):
+            return True
+        for key, markers in (("subtype", cls._ERROR_SUBTYPES), ("status", cls._ERROR_STATUSES)):
+            value = terminal.get(key)
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in markers or any(normalized.startswith(f"{marker}_") for marker in markers):
+                    return True
+        return False
+
+    @classmethod
+    def _terminal_error(cls, terminal: dict[str, Any]) -> str:
+        """Describe only bounded terminal metadata; never echo model content."""
+        fields: list[str] = []
+        for key in ("subtype", "status"):
+            value = terminal.get(key)
+            if isinstance(value, str) and value:
+                fields.append(f"{key}={value[:80]}")
+        if terminal.get("is_error") is True:
+            fields.append("is_error=true")
+        category = cls._terminal_failure_category(terminal)
+        if category:
+            fields.append(f"category={category}")
+        detail = ", ".join(fields) or "terminal_error"
+        return f"Claude CLI returned terminal error ({detail})"
+
+    @classmethod
+    def _terminal_failure_category(cls, terminal: dict[str, Any]) -> str | None:
+        """Classify terminal metadata transiently without retaining its text."""
+        try:
+            text = json.dumps(terminal, ensure_ascii=False, separators=(",", ":")).lower()
+        except (TypeError, ValueError):
+            return None
+        for category, markers in cls._TERMINAL_FAILURE_MARKERS:
+            if any(marker in text for marker in markers):
+                return category
+        return None
 
     @staticmethod
     def parse_outer_result(stdout: str) -> dict[str, Any]:

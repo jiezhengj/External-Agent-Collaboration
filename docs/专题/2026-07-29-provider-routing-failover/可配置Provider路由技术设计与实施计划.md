@@ -1,12 +1,12 @@
 # 可配置 Provider 路由策略：技术设计与实施计划
 
-- 状态：in progress；P0-P3 已实施，P4 双平台/真实验证待完成
+- 状态：implemented；P0-P4 代码、双平台 CI 与健康 provider 真实验证完成；MiMo 真实账户余额是外部运行条件
 - 所属专题：[Provider 路由、故障切换与 Claude Code 模型职责](README.md)
 - 编写日期：2026-08-03
 - 适用平台：macOS、Windows
 - 目标版本：`routing schema v1`、provider router compatibility release
 
-本文把当前写死在代码中的 Provider 选择策略抽离为非敏感配置，并给出可直接执行的实施顺序、兼容策略、状态迁移、测试矩阵和回滚方案。当前源码已实现 P0-P3：缺少 routing 时保持旧公平轮换；存在 routing 时按配置选择策略。P4 的 Windows CI/主机运行和最小真实 smoke 仍是发布门槛。
+本文把当前写死在代码中的 Provider 选择策略抽离为非敏感配置，并给出可直接执行的实施顺序、兼容策略、状态迁移、测试矩阵和回滚方案。源码已实现 P0-P4：缺少 routing 时保持旧公平轮换；存在 routing 时按配置选择策略；GitHub Actions 的 macOS/Windows 矩阵已通过；DeepSeek 真实 smoke 与自动路由 smoke 已通过。MiMo 当前 profile 已使用可接受的模型 ID，但真实账户余额不足，health 会按 billing 规则熔断；这属于外部运营条件，不是路由实现未完成。
 
 ## 1. 决策摘要
 
@@ -132,6 +132,7 @@ route_harness.py
     "deepseek": {
       "config_dir_relative_to_home": ".claude-deepseek",
       "launcher": "claude",
+      "response_transport": "direct",
       "environment": {
         "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
         "ANTHROPIC_MODEL": "provider-model"
@@ -140,6 +141,7 @@ route_harness.py
     "mimo": {
       "config_dir_relative_to_home": ".claude-mimo",
       "launcher": "claude",
+      "response_transport": "direct",
       "environment": {
         "ANTHROPIC_BASE_URL": "https://provider.example/anthropic",
         "ANTHROPIC_MODEL": "provider-model"
@@ -159,6 +161,7 @@ route_harness.py
 |`routing.default.weights`|对象|仅 `weighted_round_robin`|provider key 到正整数权重|
 |`routing.task_overrides`|对象|否|键为精确的 `task_type:mode`，值使用同一 policy schema|
 |`providers`|对象|是|现有 provider profile 定义|
+|`providers.<key>.response_transport`|枚举|否|`direct`（默认）或 `buffered_sse`；后者只为已验证的 provider/Claude CLI SSE framing 兼容启用短生命周期 loopback 内存 relay|
 
 ### 3.3 配置合并顺序
 

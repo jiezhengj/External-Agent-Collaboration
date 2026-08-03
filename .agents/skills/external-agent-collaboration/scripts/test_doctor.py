@@ -46,6 +46,18 @@ def main() -> None:
                 assert "Keychain authentication is unavailable" in str(exc)
             else:
                 raise AssertionError("Non-macOS Keychain profile must be rejected before invocation.")
+        token_profile = {"config_dir": str(root), "auth_token": "fixture-token", "environment": {}}
+        environment = collaborate.provider_environment(token_profile)
+        assert environment["ANTHROPIC_API_KEY"] == "fixture-token"
+        assert environment["ANTHROPIC_AUTH_TOKEN"] == "fixture-token"
+        for forbidden_key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+            invalid_profile = {**token_profile, "environment": {forbidden_key: "fixture-token"}}
+            try:
+                collaborate.provider_environment(invalid_profile)
+            except collaborate.CollaborationError as exc:
+                assert "profile.auth_token" in str(exc)
+            else:
+                raise AssertionError(f"{forbidden_key} must not be configured as a profile environment value.")
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         (root / "providers.shared.json").write_text(json.dumps({

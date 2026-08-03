@@ -96,7 +96,7 @@ def record_success(data: dict[str, Any], provider: str, at: datetime | None = No
 def classify_failure(exit_code: int, stderr: str) -> str | None:
     """Classify only high-confidence availability failures; never persist source text."""
     text = stderr.lower()
-    if any(value in text for value in ("insufficient balance", "insufficient quota", "payment required", "billing", "http 402")):
+    if any(value in text for value in ("insufficient balance", "insufficient account balance", "insufficient quota", "payment required", "billing", "http 402")):
         return "billing"
     if any(value in text for value in ("invalid api key", "authentication", "unauthorized", "http 401", "http 403")):
         return "authentication"

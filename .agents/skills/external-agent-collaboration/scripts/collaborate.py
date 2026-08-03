@@ -483,6 +483,7 @@ def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, ses
         ephemeral=ephemeral, fork_session=fork_session,
         response_schema=RESPONSE_CONTRACT_SCHEMA if response_contract == "standard" else None,
         stream_diagnostics=stream_diagnostics,
+        response_transport=str(profile.get("response_transport", "direct")),
     ))
 
 
@@ -491,17 +492,19 @@ def provider_environment(profile: dict[str, Any]) -> dict[str, str]:
     configured = profile.get("environment", {})
     if not isinstance(configured, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in configured.items()):
         raise CollaborationError("Provider environment must map variable names to non-secret string values.")
-    if "ANTHROPIC_AUTH_TOKEN" in configured:
+    if any(key in configured for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")):
         raise CollaborationError("Store the token only in profile.auth_token, not environment.")
     environment.update(configured)
     direct_token = profile.get("auth_token")
     service = profile.get("auth_token_keychain_service")
     if isinstance(direct_token, str) and direct_token:
+        environment["ANTHROPIC_API_KEY"] = direct_token
         environment["ANTHROPIC_AUTH_TOKEN"] = direct_token
     elif isinstance(profile.get("auth_token_env"), str) and profile.get("auth_token_env"):
         token = environment_token(profile)
         if not token:
             raise CollaborationError(f"Missing authentication environment variable: {profile['auth_token_env']}")
+        environment["ANTHROPIC_API_KEY"] = token
         environment["ANTHROPIC_AUTH_TOKEN"] = token
     elif isinstance(service, str) and service:
         if not macos_keychain_supported():
@@ -515,6 +518,7 @@ def provider_environment(profile: dict[str, Any]) -> dict[str, str]:
         token = result.stdout.rstrip("\r\n")
         if not token:
             raise CollaborationError(f"macOS Keychain item is empty: {service}")
+        environment["ANTHROPIC_API_KEY"] = token
         environment["ANTHROPIC_AUTH_TOKEN"] = token
     return environment
 
