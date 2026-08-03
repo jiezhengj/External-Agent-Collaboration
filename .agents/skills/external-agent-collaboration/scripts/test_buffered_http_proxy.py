@@ -80,7 +80,13 @@ def main() -> None:
                 environment={"ANTHROPIC_BASE_URL": f"http://127.0.0.1:{upstream.server_port}/anthropic"},
                 tools=[], allowed_tools=[], disallowed_tools=[], timeout=10, response_transport="buffered_sse",
             ))
-            assert code == 0 and stderr == "" and "structured_output" in stdout
+            if not (code == 0 and stderr == "" and "structured_output" in stdout):
+                raise AssertionError(json.dumps({
+                    "code": code,
+                    "stderr_bytes": len(stderr.encode("utf-8", "replace")),
+                    "stdout_bytes": len(stdout.encode("utf-8", "replace")),
+                    "stdout_lines": len(stdout.splitlines()),
+                }))
     finally:
         proxy.close()
         upstream.shutdown()
