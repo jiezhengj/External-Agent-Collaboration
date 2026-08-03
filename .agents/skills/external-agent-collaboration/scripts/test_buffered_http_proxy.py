@@ -7,6 +7,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import threading
@@ -82,11 +83,14 @@ def main() -> None:
             ))
             if not (code == 0 and stderr == "" and "structured_output" in stdout):
                 stderr_lower = stderr.lower()
+                stderr_safe = re.sub(r"[A-Za-z]:\\[^\\r\\n]+", "[PATH]", stderr)
+                stderr_safe = re.sub(r"\\b[A-Za-z0-9._-]{16,}\\b", "[LONG]", stderr_safe)
                 raise AssertionError(json.dumps({
                     "code": code,
                     "stderr_bytes": len(stderr.encode("utf-8", "replace")),
                     "stdout_bytes": len(stdout.encode("utf-8", "replace")),
                     "stdout_lines": len(stdout.splitlines()),
+                    "stderr_safe": stderr_safe,
                     "stderr_markers": {
                         marker: marker in stderr_lower
                         for marker in ("traceback", "permission", "winerror", "urlopen", "http error", "connection", "timeout", "no module")
