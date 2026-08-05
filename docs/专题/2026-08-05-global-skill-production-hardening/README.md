@@ -1351,7 +1351,7 @@ CI 必须：
 - 新 DEC：跨项目上下文/状态归属、中央 bad-case 隐私 schema；
 - `README.md`/`README.en.md`/`README.zh.md`、`AGENTS.md`/`AGENTS.zh.md`、`SKILL.md`/`SKILL.zh.md`：使用和边界一致。
 
-不得先把“计划”写成“已实现”。专题入口在施工中保持“实施中”，全部门槛通过后才改“已完成”。当前本机回归已扩展至 53 个脚本，coverage 已成为 CI workflow 的必需步骤且 run `30983351887` 四矩阵通过；WP-0 至 WP-6 已形成 accepted packet，Windows 真实 provider smoke 和 WP-7 最终 packet 仍未形成可发布证据。
+不得先把“计划”写成“已实现”。专题入口在施工中保持“实施中”，全部门槛通过后才改“已完成”。当前本机回归已扩展至 53 个脚本，coverage 已成为 CI workflow 的必需步骤且 run `30984221787` 四矩阵通过；WP-0 至 WP-6 已形成 accepted packet，Windows Claude provider smoke、Antigravity 跨项目只读 smoke 和 WP-7 最终 packet 仍未形成可发布证据。
 
 ## 18. 可量化完成契约
 

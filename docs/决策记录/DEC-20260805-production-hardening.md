@@ -10,9 +10,9 @@
 
 ## 当前证据
 
-- 本机回归 53/53；标准库 coverage gate 通过 80% 总量与 90% 核心模块门槛；GitHub Actions run `30983351887` 已以提交 `58ff1d5` 通过 macOS/Windows × Python 3.10/3.13 四矩阵及 coverage 必需检查。
+- 本机回归 53/53；标准库 coverage gate 通过 80% 总量与 90% 核心模块门槛；GitHub Actions run `30984221787` 已以提交 `b67d129` 通过 macOS/Windows × Python 3.10/3.13 四矩阵及 coverage 必需检查。
 - macOS sibling fixture 真实 Antigravity read-only smoke 成功，response contract 有效、summary 包含 `AGY_CROSS_PROJECT_OK`、workspace hash 前后一致。
-- Windows 原生 fake/回归已由 CI 覆盖；本机 53/53 回归、privacy gate、coverage gate 通过；WP-0 至 WP-6 已有最新 accepted checkpoint/review/ack packet。Windows 真实 provider smoke、WP-7 最终 packet 和最终发布复验仍 pending。
+- Windows 原生 fake/回归已由 CI 覆盖；本机 53/53 回归、privacy gate、coverage gate 通过；WP-0 至 WP-6 已有最新 accepted checkpoint/review/ack packet。Windows Claude provider smoke、Antigravity 跨项目只读 smoke、WP-7 最终 packet 和最终发布复验仍 pending。
 
 ## 2026-08-05 阶段收口补充
 
