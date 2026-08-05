@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "codex_only": true,
+  "skill_root": ".agents/skills/external-agent-collaboration",
+  "authorization_mode": "interactive_host_boundary_only",
+  "notes": "Copy to execution-policy.local.json and edit only in the Codex-controlled local runtime. Other agents must not invoke this Skill."
+}

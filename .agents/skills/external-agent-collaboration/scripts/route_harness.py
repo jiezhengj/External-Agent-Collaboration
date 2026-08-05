@@ -27,7 +27,7 @@ READ_ONLY_ACTIONS = {"consult", "critique", "continue"}
 def antigravity_readiness(profile_name: str) -> tuple[bool, str]:
     """Return only a non-secret readiness reason for the P2 read-only role."""
     try:
-        profile = load_profiles(collaborate.CONTROL_ROOT).get(profile_name)
+        profile = load_profiles(collaborate.SHARED_CONTROL_ROOT).get(profile_name)
         if not profile:
             return False, "profile_missing"
         if profile.get("mode", "plan") != "plan" or profile.get("dangerously_skip_permissions") is True:
@@ -95,7 +95,8 @@ def append_if(argv: list[str], flag: str, value: str | None) -> None:
 
 
 def claude_command(args: argparse.Namespace, basis: str) -> list[str]:
-    argv = [sys.executable, str(CLAUDE_RUNNER), "--action", args.action, "--provider", args.provider, "--topic", args.topic, "--handoff", args.handoff, "--working-directory", args.working_directory, "--timeout", str(args.timeout), "--return-mode", args.return_mode, "--response-contract", args.response_contract, "--harness-routing-basis", basis]
+    argv = [sys.executable, str(CLAUDE_RUNNER), "--action", args.action, "--provider", args.provider, "--topic", args.topic, "--handoff", args.handoff, "--working-directory", args.working_directory, "--timeout", str(args.timeout), "--return-mode", args.return_mode, "--response-contract", args.response_contract, "--harness-routing-basis", basis, "--invocation-id", getattr(args, "invocation_id", "inv-router")]
+    append_if(argv, "--project-root", getattr(args, "project_root", None))
     append_if(argv, "--session-key", args.session_key)
     append_if(argv, "--expected-response", args.expected_response)
     append_if(argv, "--task-type", args.task_type)
@@ -105,12 +106,18 @@ def claude_command(args: argparse.Namespace, basis: str) -> list[str]:
     append_if(argv, "--stop-rule", args.stop_rule)
     append_if(argv, "--goal-contract", args.goal_contract)
     append_if(argv, "--goal-state", args.goal_state)
+    append_if(argv, "--construction-goal-id", getattr(args, "construction_goal_id", None))
+    append_if(argv, "--construction-wp", getattr(args, "construction_wp", None))
     for flag, values in (("--allow-path", args.allow_path), ("--allow-delete", args.allow_delete), ("--allow-binary-path", args.allow_binary_path), ("--allow-command", args.allow_command), ("--validation-command", args.validation_command), ("--validation-argv", args.validation_argv)):
         for value in values:
             argv.extend([flag, value])
     for flag, enabled in (("--fork-session", args.fork_session), ("--ephemeral", args.ephemeral), ("--stream-diagnostics", args.stream_diagnostics)):
         if enabled:
             argv.append(flag)
+    for flag in ("--max-cost-usd", "--max-duration-seconds", "--max-provider-attempts"):
+        value = getattr(args, flag[2:].replace("-", "_"), None)
+        if value is not None:
+            argv.extend([flag, str(value)])
     return argv
 
 
@@ -121,13 +128,19 @@ def antigravity_command(args: argparse.Namespace, basis: str) -> list[str]:
         raise collaborate.CollaborationError("Antigravity read-only routing does not accept execute paths, commands, outcomes, or fork-session.")
     if args.response_contract != "standard" or args.expected_response:
         raise collaborate.CollaborationError("Antigravity role routing requires the standard structured response contract.")
-    argv = [sys.executable, str(ANTIGRAVITY_RUNNER), "--action", args.action, "--topic", args.topic, "--handoff", args.handoff, "--profile", args.antigravity_profile, "--working-directory", args.working_directory, "--timeout", str(args.timeout), "--routing-basis", basis]
+    argv = [sys.executable, str(ANTIGRAVITY_RUNNER), "--action", args.action, "--topic", args.topic, "--handoff", args.handoff, "--profile", args.antigravity_profile, "--working-directory", args.working_directory, "--timeout", str(args.timeout), "--routing-basis", basis, "--invocation-id", getattr(args, "invocation_id", "inv-router")]
+    append_if(argv, "--project-root", getattr(args, "project_root", None))
     append_if(argv, "--session-key", args.session_key)
     return argv
 
 
 def run_child(argv: list[str]) -> int:
-    return subprocess.run(argv, cwd=collaborate.PROJECT_ROOT, check=False).returncode
+    try:
+        return subprocess.run(argv, cwd=collaborate.CONTEXT.target_workdir, check=False).returncode
+    except OSError as exc:
+        from failure_events import write_failure_event
+        write_failure_event(collaborate.CONTEXT, invocation_id=getattr(run_child, "invocation_id", "inv-router"), error_code="child_process_launch_failed", stage="invocation", message=str(exc), working_directory=str(collaborate.CONTEXT.target_workdir))
+        return 2
 
 
 def parser() -> argparse.ArgumentParser:
@@ -140,6 +153,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--topic", required=True)
     p.add_argument("--handoff", required=True)
     p.add_argument("--working-directory", default=str(collaborate.PROJECT_ROOT))
+    p.add_argument("--project-root", help="Explicit target project root; required for non-Git workspaces.")
+    p.add_argument("--invocation-id", default=f"inv-{__import__('time').time_ns()}", help=argparse.SUPPRESS)
     p.add_argument("--session-key")
     p.add_argument("--fork-session", action="store_true")
     p.add_argument("--allow-path", action="append", default=[])
@@ -152,6 +167,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--task-type", choices=("code", "document", "research", "creative", "planning", "data", "file_operations", "personal_advice", "current_information"))
     p.add_argument("--mode", choices=("analyze", "draft", "critique", "revise", "execute", "verify"))
     p.add_argument("--timeout", type=int, default=1200)
+    p.add_argument("--max-cost-usd", type=float)
+    p.add_argument("--max-duration-seconds", type=float)
+    p.add_argument("--max-provider-attempts", type=int, default=2)
     p.add_argument("--ephemeral", action="store_true")
     p.add_argument("--return-mode", choices=collaborate.RETURN_MODES, default="compact")
     p.add_argument("--response-contract", choices=collaborate.RESPONSE_CONTRACT_MODES, default="standard")
@@ -161,6 +179,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--stop-rule")
     p.add_argument("--goal-contract")
     p.add_argument("--goal-state")
+    p.add_argument("--construction-goal-id", help=argparse.SUPPRESS)
+    p.add_argument("--construction-wp", help=argparse.SUPPRESS)
     return p
 
 
@@ -169,7 +189,7 @@ def main() -> int:
     try:
         if args.timeout < 1:
             raise collaborate.CollaborationError("--timeout must be positive.")
-        workdir = collaborate.safe_workdir(args.working_directory)
+        workdir = collaborate.safe_workdir(args.working_directory, args.project_root)
         handoff_path = Path(args.handoff).resolve()
         if not handoff_path.is_file() or collaborate.is_sensitive(collaborate.relative(handoff_path)):
             raise collaborate.CollaborationError("Handoff must be a readable, non-sensitive project file.")
@@ -178,10 +198,29 @@ def main() -> int:
         sessions = [item for item in collaborate.registry()["sessions"] if isinstance(item, dict)]
         harness, detail = choose_route(args, handoff, workdir, sessions)
         argv = antigravity_command(args, detail["basis"]) if harness == ANTIGRAVITY else claude_command(args, detail["basis"])
-        return run_child(argv)
+        run_child.invocation_id = args.invocation_id
+        result = run_child(argv)
+        if result != 0:
+            from failure_events import event_path, write_failure_event
+            if not event_path(collaborate.CONTEXT, args.invocation_id).exists():
+                write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="child_process_unclassified", stage="invocation", child_exit_code=result, action=args.action, requested_harness=args.harness, requested_provider=args.provider, working_directory=args.working_directory)
+        return result
     except collaborate.CollaborationError as exc:
+        try:
+            from failure_events import write_failure_event
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="classification_route_mismatch" if "route" in str(exc).lower() else "validation_failed", stage="harness_route", message=str(exc), action=args.action, task_type=args.task_type, mode=args.mode, requested_harness=args.harness, working_directory=args.working_directory)
+        except Exception:
+            pass
         print(str(exc), file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        try:
+            from failure_events import write_failure_event
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="cancelled_by_host", stage="invocation", message="host interrupted child process", action=args.action, requested_harness=args.harness, requested_provider=args.provider, working_directory=args.working_directory)
+        except Exception:
+            pass
+        print("collaboration cancelled by host", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

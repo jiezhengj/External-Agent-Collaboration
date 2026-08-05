@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from sensitivity import classify_sensitive_text
+from request_envelope import RequestEnvelopeError, parse as parse_request_envelope
 
 
 TASK_TYPES = ("code", "document", "research", "creative", "planning", "data", "file_operations", "personal_advice", "current_information")
@@ -26,12 +27,21 @@ def efficiency_fields(result: dict[str, str | float], text: str) -> dict[str, st
     return {"estimated_input_bytes": size, "estimated_return_bytes": min(8192, max(512, size // 5)), "return_ratio": round(min(8192, max(512, size // 5)) / max(size, 1), 4), "batchable": bool(large and result.get("risk") != "prohibited" and result.get("task_type") in {"document", "data", "research"}), "recommended_return_mode": "file_only" if large else "compact", "review_policy": "exception" if result.get("risk") == "high" else "none", "token_policy": "batch" if large else "delegate" if result.get("delegation") == "external_agent" else "direct"}
 
 def classify(text: str) -> dict[str, str | float | bool]:
-    normalized = text.strip()
+    envelope, normalized = parse_request_envelope(text)
     if not normalized:
         raise ValueError("Request text is empty.")
 
+    if envelope is not None:
+        sensitive = classify_sensitive_text(normalized)
+        if sensitive.state != "safe" or envelope["sensitive"]:
+            return {"task_type": "file_operations", "mode": "analyze", "risk": "requires_redaction" if sensitive.state != "prohibited" else "prohibited", "context_size": "small", "tool_requirement": "none", "delegation": "direct", "reason": "Structured request is sensitive or marked sensitive; external delegation is denied.", "confidence": 0.99}
+        task_type = envelope["task_type"]
+        mode = envelope["mode"]
+        independent = bool(envelope.get("independent_review"))
+        return {"task_type": task_type, "mode": mode, "risk": "high" if task_type == "code" and mode in {"execute", "verify"} else "medium" if mode == "execute" else "low", "context_size": envelope.get("context_size", "small"), "tool_requirement": "read_only" if mode in {"analyze", "critique", "verify"} else "file_edit", "delegation": "external_agent" if independent or mode in {"execute", "critique"} else "direct", "reason": "Structured request envelope takes precedence over keyword inference.", "confidence": 0.99, "structured": True}
+
     sensitive = classify_sensitive_text(normalized)
-    current = contains(normalized, ("今天", "最新", "实时", "新闻", "天气", "股价", "汇率", "latest", "today", "weather", "price"))
+    current = contains(normalized, ("今天", "最新", "实时", "新闻", "天气", "股价", "汇率", "latest", "today", "weather", "price")) and not contains(normalized, ("current implementation", "current code", "当前实现", "当前代码"))
     connector = contains(normalized, ("gmail", "邮箱", "日历", "calendar", "slack", "notion", "drive"))
     artifact = contains(normalized, ("图片", "image", "ppt", "pptx", "幻灯片", "slides", "xlsx", "excel", "word", ".docx", "pdf"))
     code = contains(normalized, ("代码", "code", "bug", "报错", "test", "测试", "函数", "api", "重构", "repo", "仓库", "脚本"))

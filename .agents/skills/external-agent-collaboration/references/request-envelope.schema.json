@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "request", "task_type", "mode", "independent_review", "sensitive"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "request": {"type": "string", "minLength": 1},
+    "task_type": {"enum": ["code", "document", "research", "creative", "planning", "data", "file_operations", "personal_advice", "current_information"]},
+    "mode": {"enum": ["analyze", "draft", "critique", "revise", "execute", "verify"]},
+    "independent_review": {"type": "boolean"},
+    "sensitive": {"type": "boolean"},
+    "context_size": {"enum": ["small", "medium", "large"]}
+  },
+  "additionalProperties": false
+}

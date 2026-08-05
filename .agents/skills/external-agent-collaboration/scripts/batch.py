@@ -8,8 +8,9 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from workspace_context import skill_project_root
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = skill_project_root()
 CONTROL = ROOT / ".ai-collaboration"
 SENSITIVE = {".git", ".ai-collaboration", "secrets", "credentials", "private"}
 MAX_RECORD_BYTES = 4096

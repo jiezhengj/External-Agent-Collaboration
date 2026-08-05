@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from harness_state import RUNTIME_SCHEMA_VERSION, decorate_legacy_record
+from workspace_context import skill_project_root
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = skill_project_root()
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
 RUNTIME_FILES = {
     "sessions": CONTROL_ROOT / "sessions.json",

@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from platform_support import host_platform, record_host_platform
+from workspace_context import skill_project_root
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = skill_project_root()
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
 SESSIONS_FILE = CONTROL_ROOT / "sessions.json"
 

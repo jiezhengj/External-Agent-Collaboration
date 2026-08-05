@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id": "large-repo-code", "request": "Review the whole repository and implement the bounded change", "expected": {"task_type": "code", "delegation": "external_agent"}},
+    {"id": "explicit-independent-review", "request": "{\"schema_version\":1,\"request\":\"review this architecture\",\"task_type\":\"planning\",\"mode\":\"critique\",\"independent_review\":true,\"sensitive\":false}", "expected": {"delegation": "external_agent"}},
+    {"id": "current-implementation-negative", "request": "Review the current implementation files", "expected": {"not_task_type": "current_information"}},
+    {"id": "native-artifact", "request": "Create a presentation deck", "expected": {"delegation": "native_codex"}},
+    {"id": "sensitive-negative", "request": "Review API_KEY=sk-test_value_test_value_test_value", "expected": {"delegation": "direct"}}
+  ]
+}

@@ -36,14 +36,20 @@ from profile_support import ProfileConfigError, environment_token, load_profiles
 from provider_health import classify_failure, default_health, is_available, record_failure, record_success, status as provider_health_status, valid_health
 from provider_routing import RoutingError, append_event, choose_provider, resolve_policy, valid_metrics
 from sensitivity import classify_sensitive_text
+from failure_events import write_failure_event
+from workspace_context import WorkspaceContext, WorkspaceContextError, default_context, resolve_context, link_like
+from scope_guard import ScopeGuardError, require_execute_guard
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
-TRUST_FILE = CONTROL_ROOT / "trusted-providers.local.json"
+CONTEXT = default_context()
+PROJECT_ROOT = CONTEXT.target_project_root
+SKILL_PROJECT_ROOT = CONTEXT.skill_project_root
+SHARED_CONTROL_ROOT = CONTEXT.shared_control_root
+CONTROL_ROOT = CONTEXT.target_control_root
+TRUST_FILE = SHARED_CONTROL_ROOT / "trusted-providers.local.json"
 SESSIONS_FILE = CONTROL_ROOT / "sessions.json"
-METRICS_FILE = CONTROL_ROOT / "provider-metrics.json"
-HEALTH_FILE = CONTROL_ROOT / "provider-health.json"
+METRICS_FILE = SHARED_CONTROL_ROOT / "provider-metrics.json"
+HEALTH_FILE = SHARED_CONTROL_ROOT / "provider-health.json"
 TOPICS_FILE = CONTROL_ROOT / "topics.json"
 GOALS_DIR = CONTROL_ROOT / "goals"
 SENSITIVE_PARTS = {".git", "secrets", "credentials", "private"}
@@ -51,7 +57,7 @@ SENSITIVE_NAMES = {".env", "id_rsa", "id_ed25519"}
 CONTROL_PARTS = {".ai-collaboration", ".git"}
 MAX_SNAPSHOT_BYTES = 500 * 1024 * 1024
 RETURN_MODES = ("compact", "structured", "file_only", "debug")
-RESPONSE_CONTRACT_MODES = ("standard", "none")
+RESPONSE_CONTRACT_MODES = ("standard", "none", "construction_stage_report", "construction_review_ack")
 COMPACT_RETURN_BYTES = 8 * 1024
 STRUCTURED_RETURN_BYTES = 16 * 1024
 TOPIC_STATE_MAX_CHARS = 4096
@@ -74,11 +80,43 @@ RESPONSE_CONTRACT_SCHEMA: dict[str, Any] = {
     },
     "additionalProperties": False,
 }
+CONSTRUCTION_STAGE_REPORT_SCHEMA: dict[str, Any] = {
+    "type": "object", "required": ["report_type", "schema_version", "goal_id", "wp_id", "proposed_status", "implementation_summary", "requirement_claims", "proposed_next_action"],
+    "properties": {"report_type": {"const": "construction_stage_report"}, "schema_version": {"const": 1}, "goal_id": {"type": "string"}, "wp_id": {"type": "string"}, "proposed_status": {"enum": ["ready_for_review", "in_progress_interrupted", "blocked"]}, "implementation_summary": {"type": "string", "maxLength": 1000}, "requirement_claims": {"type": "array"}, "decisions": {"type": "array"}, "deviations": {"type": "array"}, "commands_claimed": {"type": "array"}, "unresolved_risks": {"type": "array"}, "requested_review": {"type": "array"}, "proposed_next_action": {"type": "string", "maxLength": 1000}},
+    "additionalProperties": False,
+}
+CONSTRUCTION_ACK_SCHEMA: dict[str, Any] = {
+    "type": "object", "required": ["report_type", "schema_version", "review_id", "review_sha256", "responses"],
+    "properties": {"report_type": {"const": "construction_review_ack"}, "schema_version": {"const": 1}, "review_id": {"type": "string"}, "review_sha256": {"type": "string"}, "responses": {"type": "array"}}, "additionalProperties": False,
+}
 CLAUDE_ADAPTER = ClaudeCodeAdapter()
 
 
 class CollaborationError(RuntimeError):
     pass
+
+
+def configure_context(context: WorkspaceContext) -> None:
+    """Bind legacy module-level paths after a target project is resolved.
+
+    Existing helpers intentionally retain their small signatures for backwards
+    compatibility with the test suite and direct callers.  A process handles
+    one target invocation, so rebinding is deterministic and cannot mix target
+    runtime state with the Skill's shared provider state.
+    """
+    global CONTEXT, PROJECT_ROOT, SKILL_PROJECT_ROOT, SHARED_CONTROL_ROOT, CONTROL_ROOT
+    global TRUST_FILE, SESSIONS_FILE, METRICS_FILE, HEALTH_FILE, TOPICS_FILE, GOALS_DIR
+    CONTEXT = context
+    PROJECT_ROOT = context.target_project_root
+    SKILL_PROJECT_ROOT = context.skill_project_root
+    SHARED_CONTROL_ROOT = context.shared_control_root
+    CONTROL_ROOT = context.target_control_root
+    TRUST_FILE = SHARED_CONTROL_ROOT / "trusted-providers.local.json"
+    SESSIONS_FILE = CONTROL_ROOT / "sessions.json"
+    METRICS_FILE = SHARED_CONTROL_ROOT / "provider-metrics.json"
+    HEALTH_FILE = SHARED_CONTROL_ROOT / "provider-health.json"
+    TOPICS_FILE = CONTROL_ROOT / "topics.json"
+    GOALS_DIR = CONTROL_ROOT / "goals"
 
 
 def now() -> str:
@@ -146,7 +184,7 @@ def write_json(path: Path, value: Any) -> None:
 
 def profiles() -> dict[str, dict[str, Any]]:
     try:
-        return load_profiles(CONTROL_ROOT)
+        return load_profiles(SHARED_CONTROL_ROOT)
     except ProfileConfigError as exc:
         raise CollaborationError(str(exc)) from exc
 
@@ -284,12 +322,35 @@ def register_topic_session(data: dict[str, Any], session: dict[str, Any], parent
     item["last_used_at"] = now()
 
 
-def safe_workdir(value: str) -> Path:
-    workdir = Path(value).resolve()
-    relative(workdir)
-    if not workdir.is_dir():
-        raise CollaborationError(f"Working directory does not exist: {workdir}")
-    return workdir
+def safe_workdir(value: str, project_root: str | None = None) -> Path:
+    # Keep the long-standing in-process test/embedding seam: callers may
+    # replace PROJECT_ROOT and CONTROL_ROOT before invoking main().  Normal
+    # CLI calls always use WorkspaceContext resolution below.
+    candidate = Path(value).resolve()
+    if project_root is None and PROJECT_ROOT != CONTEXT.target_project_root:
+        try:
+            candidate.relative_to(PROJECT_ROOT.resolve())
+            context = WorkspaceContext(
+                skill_project_root=CONTEXT.skill_project_root,
+                skill_root=CONTEXT.skill_root,
+                target_project_root=PROJECT_ROOT.resolve(),
+                target_workdir=candidate,
+                shared_control_root=CONTROL_ROOT.resolve(),
+                target_control_root=CONTROL_ROOT.resolve(),
+                failure_ledger_root=CONTEXT.failure_ledger_root,
+            )
+            configure_context(context)
+            if not candidate.is_dir():
+                raise CollaborationError(f"Working directory does not exist: {candidate}")
+            return candidate
+        except ValueError:
+            pass
+    try:
+        context = resolve_context(value, project_root)
+    except WorkspaceContextError as exc:
+        raise CollaborationError(str(exc)) from exc
+    configure_context(context)
+    return context.target_workdir
 
 
 def normalize_allow_path(value: str) -> Path:
@@ -357,20 +418,51 @@ def find_session(key: str, sessions: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def copy_checkpoint(run_id: str) -> Path:
-    total = sum(path.stat().st_size for path in PROJECT_ROOT.rglob("*") if path.is_file() and not path.is_symlink() and not is_controlled(path.relative_to(PROJECT_ROOT)))
+    total = 0
+    for path in safe_walk(PROJECT_ROOT):
+        rel = path.relative_to(PROJECT_ROOT)
+        if is_controlled(rel) or link_like(path):
+            continue
+        if path.is_file():
+            total += path.stat().st_size
     if total > MAX_SNAPSHOT_BYTES:
         raise CollaborationError(f"Project snapshot is {total} bytes; narrow the workspace before execute (limit {MAX_SNAPSHOT_BYTES}).")
     destination = CONTROL_ROOT / "snapshots" / run_id / "before"
     destination.parent.mkdir(parents=True, exist_ok=True)
     ignored = shutil.ignore_patterns(".git", ".ai-collaboration", "__pycache__", ".DS_Store")
-    shutil.copytree(PROJECT_ROOT, destination, ignore=ignored, dirs_exist_ok=False)
+    shutil.copytree(PROJECT_ROOT, destination, ignore=ignored, symlinks=True, dirs_exist_ok=False)
     return destination
+
+
+def safe_walk(root: Path) -> list[Path]:
+    """Walk without traversing symlinks, junctions, or other reparse points."""
+    paths: list[Path] = []
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        try:
+            entries = list(os.scandir(current))
+        except OSError as exc:
+            raise CollaborationError(f"Cannot inspect workspace path: {current}") from exc
+        for entry in entries:
+            path = Path(entry.path)
+            paths.append(path)
+            if entry.is_dir(follow_symlinks=False) and not link_like(path):
+                pending.append(path)
+    return paths
 
 
 def manifest(root: Path) -> dict[str, str]:
     output: dict[str, str] = {}
-    for path in root.rglob("*"):
+    for path in safe_walk(root):
         rel = path.relative_to(root)
+        if link_like(path):
+            try:
+                target = os.readlink(path)
+            except OSError:
+                target = "[unreadable-link]"
+            output[rel.as_posix()] = "symlink:" + target
+            continue
         if path.is_symlink():
             output[rel.as_posix()] = "symlink:" + os.readlink(path)
             continue
@@ -393,10 +485,12 @@ def restore_path(rel: Path, checkpoint: Path) -> None:
             shutil.rmtree(target)
         else:
             target.unlink()
-    if backup.exists():
+    if backup.exists() or backup.is_symlink():
         target.parent.mkdir(parents=True, exist_ok=True)
-        if backup.is_dir():
-            shutil.copytree(backup, target)
+        if backup.is_symlink():
+            target.symlink_to(os.readlink(backup), target_is_directory=backup.is_dir())
+        elif backup.is_dir():
+            shutil.copytree(backup, target, symlinks=True)
         else:
             shutil.copy2(backup, target)
 
@@ -438,6 +532,10 @@ def goal_state_file(value: str | None, contract: dict[str, Any]) -> Path:
 def response_contract_instruction(return_mode: str, response_contract: str) -> str:
     if response_contract == "none":
         return "No JSON response contract is active for this controlled exact-response check. Follow the handoff's required response exactly; do not add explanation, Markdown, or a JSON envelope."
+    if response_contract == "construction_stage_report":
+        return "Return exactly one construction_stage_report JSON object. Do not include Markdown, file contents, diffs, raw stdout, absolute paths, secrets, session IDs, or any unsupported keys. Stop at the current WP gate; do not write Skill runtime state. Required fields: report_type=construction_stage_report, schema_version=1, goal_id, wp_id, proposed_status=ready_for_review|in_progress_interrupted|blocked, implementation_summary, requirement_claims, decisions, deviations, commands_claimed, unresolved_risks, requested_review, proposed_next_action."
+    if response_contract == "construction_review_ack":
+        return "Return exactly one construction_review_ack JSON object and no Markdown. Do not edit files or run project commands. Required fields: report_type=construction_review_ack, schema_version=1, review_id, review_sha256, responses covering every finding exactly once."
     if return_mode == "debug":
         return "The caller is in explicit debug mode and retains the outer CLI envelope, but your response must still satisfy this schema: " + response_contract_instruction("compact", "standard")
     return """Return exactly one JSON object and no Markdown fence. Its required keys are:
@@ -454,7 +552,7 @@ Action: {action}.
 {operation}
 Allowed project-relative paths: {', '.join(path.as_posix() for path in allow_paths) or '(none)'}.
 Allowed shell command patterns: {', '.join(commands) or '(none)'}.
-Never read secrets, commit, push, deploy, publish, rewrite Git history, install global packages, or invoke another agent.
+Never read secrets, commit, push, deploy, publish, rewrite Git history, install global packages, or invoke another agent. You must not import or invoke this Skill's scripts, read or write `.ai-collaboration` runtime state, or close a Codex Goal. In construction work, return only the requested Stage Report or Review Acknowledgement and stop at the authorized gate.
 Complete only this handoff. Report files changed, commands run, validation results, remaining risks, and uncertainty.
 
 Response contract:
@@ -481,7 +579,7 @@ def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, ses
         environment=provider_environment(profile), tools=tools, allowed_tools=allowed_tools, disallowed_tools=[], timeout=timeout,
         session_id=CLAUDE_ADAPTER.resume_id(session) if session and not ephemeral else None,
         ephemeral=ephemeral, fork_session=fork_session,
-        response_schema=RESPONSE_CONTRACT_SCHEMA if response_contract == "standard" else None,
+        response_schema={"construction_stage_report": CONSTRUCTION_STAGE_REPORT_SCHEMA, "construction_review_ack": CONSTRUCTION_ACK_SCHEMA}.get(response_contract, RESPONSE_CONTRACT_SCHEMA if response_contract == "standard" else None),
         stream_diagnostics=stream_diagnostics,
         response_transport=str(profile.get("response_transport", "direct")),
     ))
@@ -568,7 +666,7 @@ def ensure_creation_capability(provider: str) -> dict[str, Any]:
     completed = subprocess.run([sys.executable, str(probe), "--provider", provider], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=600)
     if completed.returncode != 0:
         raise CollaborationError(f"Capability probe failed for {provider}: {completed.stderr[-800:] or completed.stdout[-800:]}")
-    records = load_json(CONTROL_ROOT / "provider-capabilities.json", {"providers": {}})
+    records = load_json(SHARED_CONTROL_ROOT / "provider-capabilities.json", {"providers": {}})
     record = records.get("providers", {}).get(provider) if isinstance(records, dict) else None
     if not isinstance(record, dict):
         raise CollaborationError(f"Capability probe produced no record for {provider}.")
@@ -718,7 +816,8 @@ def parse_response_contract(result: dict[str, Any], response_contract: str = "st
             value = json.loads(candidate)
         except json.JSONDecodeError as exc:
             return None, [f"result is not valid JSON: {exc.msg}"]
-    errors = schema_errors(value, RESPONSE_CONTRACT_SCHEMA)
+    schema = {"construction_stage_report": CONSTRUCTION_STAGE_REPORT_SCHEMA, "construction_review_ack": CONSTRUCTION_ACK_SCHEMA}.get(response_contract, RESPONSE_CONTRACT_SCHEMA)
+    errors = schema_errors(value, schema)
     if errors:
         return None, errors[:12]
     return value, []
@@ -865,7 +964,13 @@ def evaluate_outcomes(outcomes: list[dict[str, Any]], changed: list[str], workdi
                     command = item.get("command")
                     if not isinstance(command, str) or command not in validation_commands:
                         raise CollaborationError("command_succeeds must exactly match one --validation-command or --validation-argv.")
-                    completed = subprocess.run(command, cwd=workdir, shell=True, capture_output=True, text=True, timeout=180)
+                    try:
+                        argv = shlex.split(command, posix=os.name != "nt")
+                    except ValueError as exc:
+                        raise CollaborationError("validation command could not be parsed as argv.") from exc
+                    if not argv:
+                        raise CollaborationError("validation command produced an empty argv.")
+                    completed = subprocess.run(argv, cwd=workdir, shell=False, capture_output=True, text=True, timeout=180)
                     result.update({"command": command, "exit_code": completed.returncode, "passed": completed.returncode == 0, "stderr": completed.stderr[-2000:]})
             else:
                 raise CollaborationError(f"Unsupported expected outcome type: {kind}")
@@ -882,6 +987,8 @@ def main() -> int:
     parser.add_argument("--topic", required=True)
     parser.add_argument("--handoff", required=True)
     parser.add_argument("--working-directory", default=str(PROJECT_ROOT))
+    parser.add_argument("--project-root", help="Explicit target project root; required for non-Git workspaces.")
+    parser.add_argument("--invocation-id", help=argparse.SUPPRESS)
     parser.add_argument("--session-key")
     parser.add_argument("--fork-session", action="store_true")
     parser.add_argument("--skip-capability-check", action="store_true", help=argparse.SUPPRESS)
@@ -895,6 +1002,9 @@ def main() -> int:
     parser.add_argument("--task-type", choices=("code", "document", "research", "creative", "planning", "data", "file_operations", "personal_advice", "current_information"))
     parser.add_argument("--mode", choices=("analyze", "draft", "critique", "revise", "execute", "verify"))
     parser.add_argument("--timeout", type=int, default=1200)
+    parser.add_argument("--max-cost-usd", type=float)
+    parser.add_argument("--max-duration-seconds", type=float)
+    parser.add_argument("--max-provider-attempts", type=int, default=2)
     parser.add_argument("--ephemeral", action="store_true")
     parser.add_argument("--return-mode", choices=RETURN_MODES, default="compact", help="stdout shape; full CLI JSON always remains in local outputs.")
     parser.add_argument("--response-contract", choices=RESPONSE_CONTRACT_MODES, default="standard", help="Use none only for a bounded read-only exact-response smoke check.")
@@ -905,7 +1015,20 @@ def main() -> int:
     parser.add_argument("--stop-rule", help="Short durable stop rule for the one-page topic state.")
     parser.add_argument("--goal-contract", help="Project-relative Goal contract JSON; associates this Run with a persistent Goal.")
     parser.add_argument("--goal-state", help="Optional project-relative Goal state JSON; defaults to .ai-collaboration/goals/<goal_id>.json.")
-    args = parser.parse_args()
+    parser.add_argument("--construction-goal-id", help=argparse.SUPPRESS)
+    parser.add_argument("--construction-wp", help=argparse.SUPPRESS)
+    invocation_id = args_invocation_id = next((sys.argv[index + 1] for index, value in enumerate(sys.argv[:-1]) if value == "--invocation-id"), None)
+    if not invocation_id:
+        invocation_id = f"inv-{int(time.time())}-{uuid.uuid4().hex[:12]}"
+    try:
+        args = parser.parse_args()
+    except SystemExit as exc:
+        if exc.code != 0:
+            try:
+                write_failure_event(default_context(), invocation_id=invocation_id, error_code="invalid_arguments", stage="argument_parse", message="argument parsing failed")
+            except Exception:
+                pass
+        raise
     run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     started_monotonic = time.monotonic()
     action_modes = {"consult": "analyze", "continue": "analyze", "draft": "draft", "critique": "critique", "execute": "execute"}
@@ -917,9 +1040,19 @@ def main() -> int:
     goal_state: dict[str, Any] | None = None
     goal_run_started = False
     goal_recorded = False
+    checkpoint: Path | None = None
+    before: dict[str, str] = {}
+    rollback_attempted = False
+    rollback_succeeded: bool | None = None
     try:
         if args.timeout < 1:
             raise CollaborationError("--timeout must be positive.")
+        if args.max_cost_usd is not None and args.max_cost_usd < 0:
+            raise CollaborationError("--max-cost-usd must be non-negative.")
+        if args.max_duration_seconds is not None and args.max_duration_seconds <= 0:
+            raise CollaborationError("--max-duration-seconds must be positive.")
+        if args.max_provider_attempts < 1:
+            raise CollaborationError("--max-provider-attempts must be positive.")
         if args.response_contract == "none":
             if args.action not in {"consult", "critique"} or not args.ephemeral:
                 raise CollaborationError("--response-contract none is limited to an ephemeral consult or critique smoke check.")
@@ -929,7 +1062,7 @@ def main() -> int:
                 raise CollaborationError("--response-contract none requires a non-empty single-line --expected-response.")
         elif args.expected_response is not None:
             raise CollaborationError("--expected-response requires --response-contract none.")
-        workdir = safe_workdir(args.working_directory)
+        workdir = safe_workdir(args.working_directory, args.project_root)
         handoff_file = Path(args.handoff).resolve()
         handoff_rel = relative(handoff_file)
         if is_sensitive(handoff_rel) or not handoff_file.is_file():
@@ -975,7 +1108,7 @@ def main() -> int:
                 raise CollaborationError(str(exc)) from exc
         configured = profiles()
         try:
-            routing_config = load_routing(CONTROL_ROOT, provider_keys=set(configured))
+            routing_config = load_routing(SHARED_CONTROL_ROOT, provider_keys=set(configured))
         except ProfileConfigError as exc:
             raise CollaborationError(str(exc)) from exc
         trust = trust_registry()
@@ -1016,6 +1149,11 @@ def main() -> int:
             provider, profile, route = fallback
             session = None
             log["profile_failover"] = {"from": failed_provider, "to": provider, "failure_kind": "configuration"}
+        if args.action == "execute":
+            try:
+                require_execute_guard(str(profile.get("config_dir", "")))
+            except ScopeGuardError as exc:
+                raise CollaborationError(str(exc)) from exc
         log.update({"provider": provider, "auto_selected": auto_selected, "session_key": session.get("key") if session else None, "routing": route, "provider_health_before": provider_health_status(health, provider)})
 
         effective_fork = args.fork_session
@@ -1034,14 +1172,14 @@ def main() -> int:
                 else:
                     raise CollaborationError("Provider cannot create required output files with the verified toolset.")
 
-        checkpoint: Path | None = None
-        before: dict[str, str] = {}
         if args.action == "execute":
             checkpoint = copy_checkpoint(run_id)
             before = manifest(PROJECT_ROOT)
         prompt = build_prompt(args.action, args.topic, handoff, allow_paths, commands, args.return_mode, args.response_contract)
         goal_run_started = goal_contract is not None
-        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, args.timeout, args.stream_diagnostics, args.response_contract)
+        provider_attempts = 1
+        invocation_timeout = min(args.timeout, max(1, int(args.max_duration_seconds - (time.monotonic() - started_monotonic)))) if args.max_duration_seconds is not None else args.timeout
+        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, invocation_timeout, args.stream_diagnostics, args.response_contract)
         log.update({"exit_code": exit_code, "stderr": one_line(stderr, 1200)})
 
         if exit_code != 0:
@@ -1049,7 +1187,7 @@ def main() -> int:
             if failure_kind:
                 record_failure(health, provider, failure_kind)
                 save_health(health)
-            fallback = alternate_provider(provider, available, metrics, health, task_type, mode) if args.provider == "auto" and failure_kind else None
+            fallback = alternate_provider(provider, available, metrics, health, task_type, mode) if args.provider == "auto" and failure_kind and provider_attempts < args.max_provider_attempts else None
             if fallback is None:
                 if checkpoint:
                     restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
@@ -1060,7 +1198,9 @@ def main() -> int:
             failed_provider = provider
             provider, profile, route = fallback
             session = None
-            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, args.timeout, args.stream_diagnostics, args.response_contract)
+            provider_attempts += 1
+            invocation_timeout = min(args.timeout, max(1, int(args.max_duration_seconds - (time.monotonic() - started_monotonic)))) if args.max_duration_seconds is not None else args.timeout
+            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, invocation_timeout, args.stream_diagnostics, args.response_contract)
             log.update({"provider_failover": {"from": failed_provider, "to": provider, "failure_kind": failure_kind}, "exit_code": exit_code, "stderr": one_line(stderr, 1200)})
             if exit_code != 0:
                 fallback_kind = classify_failure(exit_code, stderr)
@@ -1073,6 +1213,11 @@ def main() -> int:
         record_success(health, provider)
         save_health(health)
         result = parse_result(stdout, args.stream_diagnostics)
+        if args.max_duration_seconds is not None and time.monotonic() - started_monotonic > args.max_duration_seconds:
+            raise CollaborationError("budget_exhausted: max duration exceeded")
+        reported_cost = result.get("total_cost_usd")
+        if args.max_cost_usd is not None and isinstance(reported_cost, (int, float)) and reported_cost > args.max_cost_usd:
+            raise CollaborationError("budget_exhausted: max cost exceeded")
         stream_summary: dict[str, Any] | None = None
         if args.stream_diagnostics:
             try:
@@ -1081,6 +1226,12 @@ def main() -> int:
                 raise CollaborationError(str(exc)) from exc
         permission_denied = has_permission_denial(result)
         response, contract_errors = parse_response_contract(result, args.response_contract)
+        if response is not None and args.response_contract == "construction_stage_report" and args.construction_goal_id and args.construction_wp:
+            from construction_protocol import validate_report
+            try:
+                validate_report(response, args.construction_goal_id, args.construction_wp)
+            except Exception as exc:
+                contract_errors.append(str(exc))
         exact_errors = exact_response_errors(result, args.expected_response)
         changed: list[str] = []
         violations: list[str] = []
@@ -1132,7 +1283,7 @@ def main() -> int:
         write_json(METRICS_FILE, metrics)
         output_file = output_path(run_id, "outputs")
         output_rel = str(output_file.relative_to(PROJECT_ROOT))
-        result_record = {"run_id": run_id, "status": status, "provider": provider, "harness": CLAUDE_CODE, "host_platform": host_platform(), "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": result, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors, "output_path": output_rel}
+        result_record = {"run_id": run_id, "status": status, "provider": provider, "harness": CLAUDE_CODE, "host_platform": host_platform(), "harness_routing": {"harness": CLAUDE_CODE, "basis": args.harness_routing_basis or "direct_claude_entry"}, "action": args.action, "task_type": task_type, "mode": mode, "routing": route, "topic": args.topic, "result": redact_return_value(result), "response": redact_return_value(response) if response is not None else None, "permission_denied": permission_denied, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "return_mode": args.return_mode, "provider_health": provider_health_status(health, provider), "result_contract": {"mode": args.response_contract, "valid": args.response_contract == "none" or response is not None, "errors": contract_errors}, "response_acceptance_errors": exact_errors, "output_path": output_rel}
         if stream_summary is not None:
             result_record["stream_diagnostics"] = stream_summary
         write_json(output_file, result_record)
@@ -1171,6 +1322,14 @@ def main() -> int:
         print(json.dumps(return_payload(args.return_mode, result_record, output_rel, response, contract_errors), ensure_ascii=False, indent=2))
         return 0 if status == "completed" else 3
     except CollaborationError as exc:
+        if checkpoint is not None:
+            rollback_attempted = True
+            try:
+                restore_changed(before, manifest(PROJECT_ROOT), checkpoint)
+                rollback_succeeded = True
+            except Exception as rollback_exc:
+                rollback_succeeded = False
+                log["rollback_error"] = one_line(str(rollback_exc), 400)
         if goal_run_started and goal_contract is not None and goal_state is not None and goal_state_path is not None and not goal_recorded:
             try:
                 failed_run = {"run_id": run_id, "status": "failed", "action": args.action, "host_platform": host_platform(), "output_path": str(output_path(run_id, "outputs").relative_to(PROJECT_ROOT)), "outcome_results": []}
@@ -1181,6 +1340,40 @@ def main() -> int:
                 log["goal_error"] = str(goal_exc)
         log.update({"status": "failed", "error": str(exc), "finished_at": now()})
         write_json(output_path(run_id, "logs"), log)
+        try:
+            error_text = str(exc).lower()
+            if "budget_exhausted" in error_text:
+                failure_code = "budget_exhausted"
+            elif "scope_guard" in error_text:
+                failure_code = "scope_guard_unavailable"
+            elif "valid json" in error_text or "json" in error_text and "return" in error_text:
+                failure_code = "response_parsing_failed"
+            elif "goal aggregation" in error_text:
+                failure_code = "goal_persistence_failed"
+            else:
+                failure_code = "validation_failed"
+            write_failure_event(
+                CONTEXT,
+                invocation_id=invocation_id,
+                terminal_status="failed",
+                stage="runtime",
+                error_code=failure_code,
+                error_category="collaboration",
+                action=args.action,
+                task_type=task_type,
+                mode=mode,
+                route_basis=log.get("routing", {}).get("basis") if isinstance(log.get("routing"), dict) else None,
+                requested_provider=args.provider,
+                selected_provider=log.get("provider"),
+                provider_invoked=bool(log.get("exit_code") is not None),
+                run_id=run_id,
+                message=str(exc),
+                working_directory=args.working_directory,
+                rollback_attempted=rollback_attempted,
+                rollback_succeeded=rollback_succeeded,
+            )
+        except Exception:
+            pass
         print(str(exc), file=sys.stderr)
         return 2
 

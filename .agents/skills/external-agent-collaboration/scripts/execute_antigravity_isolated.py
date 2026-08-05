@@ -18,8 +18,8 @@ def main() -> int:
     p.add_argument("--expected", required=True)
     p.add_argument("--timeout", type=int, default=180)
     args = p.parse_args()
-    profile = load_profiles(collaborate.CONTROL_ROOT).get(args.profile)
-    if not profile or profile.get("dangerously_skip_permissions") is not True or not trusted(collaborate.CONTROL_ROOT, args.profile, profile):
+    profile = load_profiles(collaborate.SHARED_CONTROL_ROOT).get(args.profile)
+    if not profile or profile.get("dangerously_skip_permissions") is not True or not trusted(collaborate.SHARED_CONTROL_ROOT, args.profile, profile):
         raise SystemExit("Isolated full-auto requires a trusted explicit local-full-auto profile.")
     handoff = (collaborate.PROJECT_ROOT / args.handoff).read_text(encoding="utf-8")
     collaborate.validate_handoff_sensitivity(handoff)

@@ -7,9 +7,10 @@ import argparse
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from workspace_context import skill_project_root
 
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = skill_project_root()
 CONTROL = ROOT / ".ai-collaboration"
 SESSIONS = CONTROL / "sessions.json"
 TOPICS = CONTROL / "topics.json"

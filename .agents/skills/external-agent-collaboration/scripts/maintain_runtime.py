@@ -3,7 +3,8 @@
 from __future__ import annotations
 import argparse,json,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[4]; CONTROL=ROOT/'.ai-collaboration'
+from workspace_context import skill_project_root
+ROOT=skill_project_root(); CONTROL=ROOT/'.ai-collaboration'
 def main():
  p=argparse.ArgumentParser();p.add_argument('--days',type=int,default=30);p.add_argument('--apply',action='store_true');a=p.parse_args();cut=time.time()-a.days*86400; candidates=[]
  for name in ('handoffs','outputs','logs','snapshots','reviews','batches'):

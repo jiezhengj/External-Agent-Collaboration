@@ -9,9 +9,14 @@ import hashlib
 import json
 import re
 import sys
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from state_store import locked
+from workspace_context import skill_project_root
 
 
 SCHEMA_VERSION = 1
@@ -56,9 +61,18 @@ def load_json(path: Path) -> Any:
 
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -225,7 +239,8 @@ def load_state(path: Path, contract: dict[str, Any], contract_path: str | None =
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
-    write_json(path, state)
+    with locked(path):
+        write_json(path, state)
 
 
 def ensure_can_start_run(state: dict[str, Any], contract: dict[str, Any]) -> None:
@@ -460,7 +475,7 @@ def _load_for_cli(args: argparse.Namespace) -> tuple[Path, dict[str, Any], Path,
 
 def cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[4]))
+    parser.add_argument("--project-root", default=str(skill_project_root()))
     subparsers = parser.add_subparsers(dest="action", required=True)
     for name in ("validate", "show", "record-run", "decide", "block", "unblock", "cancel"):
         sub = subparsers.add_parser(name)

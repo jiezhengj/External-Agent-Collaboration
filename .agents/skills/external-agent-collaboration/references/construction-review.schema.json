@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "goal_id", "checkpoint_id", "review_id", "verdict", "findings"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "goal_id": {"type": "string"},
+    "checkpoint_id": {"type": "string"},
+    "review_id": {"type": "string"},
+    "verdict": {"enum": ["accepted", "accepted_with_followups", "changes_required", "blocked", "failed"]},
+    "findings": {"type": "array"}
+  },
+  "additionalProperties": true
+}

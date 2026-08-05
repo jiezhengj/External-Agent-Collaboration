@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 
 from platform_support import host_platform
+from workspace_context import skill_project_root
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = skill_project_root()
 CONTROL = ROOT / ".ai-collaboration"
 EXAMPLE = CONTROL / "providers.local.example.json"
 LOCAL = CONTROL / "providers.local.json"

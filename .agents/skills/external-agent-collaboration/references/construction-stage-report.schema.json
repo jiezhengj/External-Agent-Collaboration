@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["report_type", "schema_version", "goal_id", "wp_id", "proposed_status", "implementation_summary", "requirement_claims", "proposed_next_action"],
+  "properties": {
+    "report_type": {"const": "construction_stage_report"},
+    "schema_version": {"const": 1},
+    "goal_id": {"type": "string"},
+    "wp_id": {"type": "string"},
+    "proposed_status": {"enum": ["ready_for_review", "in_progress_interrupted", "blocked"]},
+    "implementation_summary": {"type": "string", "maxLength": 1000},
+    "requirement_claims": {"type": "array"},
+    "decisions": {"type": "array"},
+    "deviations": {"type": "array"},
+    "commands_claimed": {"type": "array"},
+    "unresolved_risks": {"type": "array"},
+    "requested_review": {"type": "array"},
+    "proposed_next_action": {"type": "string", "maxLength": 1000}
+  },
+  "additionalProperties": false
+}

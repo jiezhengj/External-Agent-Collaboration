@@ -4,16 +4,16 @@
 
 |字段|值|
 |---|---|
-|状态|待实施（设计已完成一次只读复核并吸收修订；代码尚未施工，不是完成声明）|
-|基线提交|`27907c176c9eeef138667100351dddbe86f76bad`|
+|状态|施工实现已落地；macOS 本机验证通过；Windows 原生 CI/接手机真实 smoke 仍是最终发布门，不提前声明生产完成|
+|基线提交|实现前快照 `a8a88a5fdbfdf897d74a8e072c1b6df3e0e732c7`；实现提交以 Git 历史为准|
 |基线日期|2026-08-05|
 |适用范围|`external-agent-collaboration` Codex-only Skill 的全局发现、任务分类、跨项目调用、Claude Code/Antigravity 路由、受控执行、失败记录、双平台验证与发布|
 |目标施工者|Luna 级模型；不假设施工者能自行补齐未写明的架构决定|
 |施工编排|一个持续 Goal 覆盖 WP-0 至 WP-7；每个 WP 包含一个或多个 Run，并在进入下一 WP 前通过 Codex Review Gate|
 |目标平台|macOS 与原生 Windows；Windows 不依赖 WSL、Git Bash 或 POSIX 兼容层|
-|当前回归基线|macOS 本机 `run_regression.py`：34 个脚本通过；该结果不覆盖本文新增验收项|
+|当前回归证据|macOS 本机 `run_regression.py`：43 个脚本通过；`quality_gate.py --privacy` 通过；新增跨项目、失败 ledger、scope guard、事务、施工协议和安装器测试已纳入回归|
 |设计复核|2026-08-05，Claude Code harness + DeepSeek，run `1785899848-0adfeaa0`，结论 `ready_with_revisions`；6 个 P0 与全部 P1/P2 文档歧义已回写本文|
-|完成判定|仅以第 18 节的可执行完成门槛为准；代码存在、单端测试通过或模型自述均不等于完成|
+|完成判定|仍仅以第 18 节的可执行完成门槛为准；本机通过不替代 Windows 原生验证、真实最小 smoke、实际 hook 能力证据和最终 Codex Review Gate|
 
 本文是一次生产加固专题的唯一施工入口。它不替代当前 PRD、技术方案、实施计划和测试文档；实现完成后，施工者必须按第 17 节把已经生效的规则回写到当前规范，并在专题索引中更新状态。
 

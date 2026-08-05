@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["report_type", "schema_version", "review_id", "review_sha256", "responses"],
+  "properties": {
+    "report_type": {"const": "construction_review_ack"},
+    "schema_version": {"const": 1},
+    "review_id": {"type": "string"},
+    "review_sha256": {"type": "string"},
+    "responses": {"type": "array"}
+  },
+  "additionalProperties": false
+}

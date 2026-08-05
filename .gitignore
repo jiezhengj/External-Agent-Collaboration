@@ -15,3 +15,4 @@ history/
 !.ai-collaboration/trusted-providers.local.example.json
 !.ai-collaboration/harness-profiles.local.example.json
 !.ai-collaboration/trusted-harnesses.local.example.json
+!.ai-collaboration/execution-policy.local.example.json

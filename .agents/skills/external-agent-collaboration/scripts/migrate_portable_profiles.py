@@ -13,9 +13,10 @@ from typing import Any
 
 from platform_support import host_platform, infer_path_platform
 from profile_support import ProfileConfigError, platform_local_file_path, profile_file_paths, provider_map, read_json
+from workspace_context import skill_project_root
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = skill_project_root()
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
 MIGRATION_STATE = CONTROL_ROOT / "providers.migration.json"
 

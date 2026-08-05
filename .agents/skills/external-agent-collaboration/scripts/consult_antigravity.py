@@ -31,6 +31,8 @@ def main() -> int:
     parser.add_argument("--profile", default="antigravity_readonly")
     parser.add_argument("--session-key")
     parser.add_argument("--working-directory", default=str(collaborate.PROJECT_ROOT))
+    parser.add_argument("--project-root")
+    parser.add_argument("--invocation-id", default=f"inv-{time.time_ns()}", help=argparse.SUPPRESS)
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--routing-basis", default="explicit_antigravity_entry")
     args = parser.parse_args()
@@ -39,16 +41,16 @@ def main() -> int:
             raise collaborate.CollaborationError("--timeout must be positive.")
         if args.action == "continue" and not args.session_key:
             raise collaborate.CollaborationError("Antigravity continue requires --session-key.")
-        workdir = collaborate.safe_workdir(args.working_directory)
+        workdir = collaborate.safe_workdir(args.working_directory, args.project_root)
         path = Path(args.handoff).resolve()
         if not path.is_file() or collaborate.is_sensitive(collaborate.relative(path)):
             raise collaborate.CollaborationError("Handoff must be a readable, non-sensitive project file.")
         handoff = path.read_text(encoding="utf-8")
         collaborate.validate_handoff_sensitivity(handoff)
-        profile = load_profiles(collaborate.CONTROL_ROOT).get(args.profile)
+        profile = load_profiles(collaborate.SHARED_CONTROL_ROOT).get(args.profile)
         if not profile:
             raise HarnessProfileError(f"Harness profile '{args.profile}' is not configured.")
-        if not trusted(collaborate.CONTROL_ROOT, args.profile, profile):
+        if not trusted(collaborate.SHARED_CONTROL_ROOT, args.profile, profile):
             raise collaborate.CollaborationError("Antigravity profile has no current user-approved trust record. Authenticate interactively, then run trust_harness.py --profile " + args.profile + " --approve.")
         registry = collaborate.registry()
         session = antigravity_session(args.session_key, registry["sessions"], workdir) if args.session_key else None
@@ -79,8 +81,9 @@ def main() -> int:
         status = "blocked_by_permission" if permission == "blocked_by_permission" else "completed" if permission == "allowed" and response is not None else "failed"
         run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
         output = collaborate.output_path(run_id, "outputs")
-        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "routing": {"basis": args.routing_basis}, "topic": args.topic, "action": args.action, "permission_state": permission, "result_contract": {"valid": response is not None, "errors": errors}}
+        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "routing": {"basis": args.routing_basis}, "topic": args.topic, "action": args.action, "permission_state": permission, "response": collaborate.redact_return_value(response) if response is not None else None, "result": collaborate.redact_return_value(result), "result_contract": {"valid": response is not None, "errors": errors}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}
         collaborate.write_json(output, record)
+        collaborate.write_json(collaborate.output_path(run_id, "logs"), {"run_id": run_id, "status": status, "harness": "antigravity", "profile": args.profile, "routing_basis": args.routing_basis, "response_contract_valid": response is not None, "contract_errors": errors, "permission_state": permission, "finished_at": collaborate.now()})
         conversation_id = result.get("conversation_id")
         if status == "completed" and isinstance(conversation_id, str) and conversation_id:
             if session is None:
@@ -94,6 +97,11 @@ def main() -> int:
         print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "routing": {"basis": args.routing_basis}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT)), "result_contract_failed": response is None}, ensure_ascii=False, indent=2))
         return 0 if status == "completed" else 3
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
+        try:
+            from failure_events import write_failure_event
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="response_contract_failed" if "response" in str(exc).lower() else "provider_unclassified_failure", stage="antigravity_consult", selected_harness="antigravity", action=args.action, mode="analyze", message=str(exc), working_directory=args.working_directory)
+        except Exception:
+            pass
         print(str(exc))
         return 2
 

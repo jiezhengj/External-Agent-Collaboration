@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from request_envelope import parse as parse_request_envelope
+
 
 ANTIGRAVITY = "antigravity"
 CLAUDE_CODE = "claude_code"
@@ -34,8 +36,9 @@ def choose_harness(
                 return CLAUDE_CODE, {"basis": "antigravity_session_action_ineligible"}
             return harness, {"basis": "matching_active_session"}
         return CLAUDE_CODE, {"basis": "ambiguous_cross_harness_session"}
-    normalized = request.lower()
-    explicit_independent_review = any(marker in normalized for marker in INDEPENDENT_REVIEW_MARKERS)
+    envelope, plain_request = parse_request_envelope(request)
+    normalized = plain_request.lower()
+    explicit_independent_review = bool(envelope and envelope.get("independent_review")) or any(marker in normalized for marker in INDEPENDENT_REVIEW_MARKERS)
     if not sensitive and action in {"consult", "critique"} and explicit_independent_review:
         if antigravity_ready:
             return ANTIGRAVITY, {"basis": "explicit_independent_review"}

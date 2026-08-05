@@ -54,7 +54,7 @@ def run(args: argparse.Namespace) -> int:
     if not records: raise batch.BatchError("Batch chunk is empty.")
     configured=collaborate.profiles()
     try:
-        routing_config=load_routing(collaborate.CONTROL_ROOT, provider_keys=set(configured))
+        routing_config=load_routing(collaborate.SHARED_CONTROL_ROOT, provider_keys=set(configured))
     except ProfileConfigError as exc:
         raise batch.BatchError(str(exc)) from exc
     available=collaborate.trusted_profiles(configured,collaborate.trust_registry())
@@ -77,7 +77,10 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 def main()->int:
- p=argparse.ArgumentParser();p.add_argument("--chunk",required=True);p.add_argument("--output",required=True);p.add_argument("--provider",default="auto");p.add_argument("--timeout",type=int,default=1200);p.add_argument("--debug-output");a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument("--chunk",required=True);p.add_argument("--output",required=True);p.add_argument("--provider",default="auto");p.add_argument("--timeout",type=int,default=1200);p.add_argument("--debug-output");p.add_argument("--invocation-id",default="batch-worker");a=p.parse_args()
  try:return run(a)
- except (batch.BatchError,collaborate.CollaborationError) as e: print(str(e),file=sys.stderr);return 2
+ except (batch.BatchError,collaborate.CollaborationError) as e:
+  from failure_events import write_failure_event
+  write_failure_event(collaborate.CONTEXT, invocation_id=a.invocation_id, error_code="validation_failed", stage="batch_worker", message=str(e), requested_provider=a.provider)
+  print(str(e),file=sys.stderr);return 2
 if __name__=="__main__":raise SystemExit(main())

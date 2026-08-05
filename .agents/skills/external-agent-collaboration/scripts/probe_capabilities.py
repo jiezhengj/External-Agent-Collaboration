@@ -13,8 +13,9 @@ from typing import Any
 
 from platform_support import host_platform, supports_posix_shell_fallback
 from harness_state import state_identity
+from workspace_context import skill_project_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = skill_project_root()
 CONTROL_ROOT = PROJECT_ROOT / ".ai-collaboration"
 CAPABILITIES_FILE = CONTROL_ROOT / "provider-capabilities.json"
 COLLABORATE = Path(__file__).with_name("collaborate.py")

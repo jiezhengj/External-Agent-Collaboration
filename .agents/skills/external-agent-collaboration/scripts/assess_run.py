@@ -6,9 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from workspace_context import skill_project_root
 
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = skill_project_root()
 METRICS = ROOT / ".ai-collaboration" / "provider-metrics.json"
 
 

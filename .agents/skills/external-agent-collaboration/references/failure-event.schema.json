@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "invocation_id", "occurred_at", "terminal_status", "stage", "error_code", "redaction_version"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "invocation_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
+    "parent_invocation_id": {"type": ["string", "null"]},
+    "occurred_at": {"type": "string"},
+    "terminal_status": {"type": "string", "enum": ["failed", "blocked", "cancelled"]},
+    "stage": {"type": "string"},
+    "error_code": {"type": "string"},
+    "error_category": {"type": "string"},
+    "retryable": {"type": "boolean"},
+    "provider_invoked": {"type": "boolean"},
+    "workspace_hash": {"type": ["string", "null"]},
+    "handoff_sha256": {"type": ["string", "null"]},
+    "handoff_bytes": {"type": ["integer", "null"]},
+    "message": {"type": ["string", "null"], "maxLength": 240},
+    "redaction_version": {"const": "failure-event-v1"}
+  },
+  "additionalProperties": true
+}

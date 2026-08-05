@@ -13,6 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
 
     steps:
       - name: Check out repository
@@ -21,7 +22,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python }}
 
       - name: Check local control plane and public routing schema
         run: |
@@ -31,6 +32,9 @@ jobs:
 
       - name: Run dependency-free regression suite
         run: python .agents/skills/external-agent-collaboration/scripts/run_regression.py
+
+      - name: Run source and privacy quality gate
+        run: python .agents/skills/external-agent-collaboration/scripts/quality_gate.py --privacy
 
       - name: Check Git whitespace
         run: git diff --check

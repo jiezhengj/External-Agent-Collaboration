@@ -34,13 +34,15 @@ def main() -> int:
     parser.add_argument("--validation-command", action="append", default=[])
     parser.add_argument("--profile", default="antigravity_execute")
     parser.add_argument("--working-directory", default=str(collaborate.PROJECT_ROOT))
+    parser.add_argument("--project-root")
+    parser.add_argument("--invocation-id", default=f"agy-{time.time_ns()}", help=argparse.SUPPRESS)
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--stream-diagnostics", action="store_true")
     args = parser.parse_args()
     try:
         if args.timeout < 1:
             raise collaborate.CollaborationError("--timeout must be positive.")
-        workdir = collaborate.safe_workdir(args.working_directory)
+        workdir = collaborate.safe_workdir(args.working_directory, args.project_root)
         handoff_path = Path(args.handoff).resolve()
         if not handoff_path.is_file() or collaborate.is_sensitive(collaborate.relative(handoff_path)):
             raise collaborate.CollaborationError("Handoff must be a readable, non-sensitive project file.")
@@ -48,10 +50,10 @@ def main() -> int:
         collaborate.validate_handoff_sensitivity(handoff)
         allow_paths = [collaborate.normalize_allow_path(item) for item in args.allow_path]
         outcomes = collaborate.load_outcomes(Path(args.expected_outcomes).resolve())
-        profile = load_profiles(collaborate.CONTROL_ROOT).get(args.profile)
+        profile = load_profiles(collaborate.SHARED_CONTROL_ROOT).get(args.profile)
         if not profile or profile.get("mode") != "accept-edits":
             raise collaborate.CollaborationError("P3 execute requires a trusted Antigravity accept-edits profile.")
-        if not trusted(collaborate.CONTROL_ROOT, args.profile, profile):
+        if not trusted(collaborate.SHARED_CONTROL_ROOT, args.profile, profile):
             raise collaborate.CollaborationError("Antigravity execute profile has no current trust record.")
         if full_auto_requires_isolation(profile):
             raise collaborate.CollaborationError("Full-auto Antigravity must use execute_antigravity_isolated.py; main-worktree execute is forbidden.")
@@ -91,6 +93,11 @@ Return this JSON contract only:\n{collaborate.response_contract_instruction('com
         print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}, ensure_ascii=False))
         return 0 if status == "completed" else 3
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
+        try:
+            from failure_events import write_failure_event
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="validation_failed", stage="antigravity_execute", selected_harness="antigravity", message=str(exc), working_directory=args.working_directory)
+        except Exception:
+            pass
         print(str(exc))
         return 2
 
