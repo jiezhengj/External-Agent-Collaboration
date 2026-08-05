@@ -21,6 +21,7 @@
 ## 专题与历史
 
 - [专题索引](专题/README.md)：按专题查看讨论基线、实施状态和证据。
+- [全局 Skill 生产加固、跨项目调用与失败案例闭环](专题/2026-08-05-global-skill-production-hardening/README.md)：面向 Luna 级施工者的详细实施契约，覆盖跨项目根目录解耦、失败 ledger、持续 Goal、多 Run/Codex Review Gate、范围与回滚、触发优化和 macOS/Windows 验收。
 - [决策记录索引](决策记录/README.md)：查看重大取舍及其废止关系。
 - [迭代记录](迭代记录.md)：查看实际改动和验证。
 
