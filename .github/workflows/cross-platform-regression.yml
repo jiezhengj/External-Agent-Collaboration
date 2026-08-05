@@ -36,5 +36,8 @@ jobs:
       - name: Run source and privacy quality gate
         run: python .agents/skills/external-agent-collaboration/scripts/quality_gate.py --privacy
 
+      - name: Run standard-library coverage gate
+        run: python .agents/skills/external-agent-collaboration/scripts/coverage_gate.py --check
+
       - name: Check Git whitespace
         run: git diff --check

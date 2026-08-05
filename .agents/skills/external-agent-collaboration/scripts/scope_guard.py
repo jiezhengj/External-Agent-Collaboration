@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from workspace_context import link_like
+from workspace_context import WorkspaceContextError, link_like
 
 
 class ScopeGuardError(RuntimeError):
@@ -89,6 +89,11 @@ def check(value: Any) -> dict[str, Any]:
         return {"schema_version": 1, "decision": "allow", "reason_code": "in_scope", "checked_path_count": len(candidates)}
     except ScopeGuardError as exc:
         return {"schema_version": 1, "decision": "deny", "reason_code": exc.code, "checked_path_count": 0}
+    except (OSError, WorkspaceContextError):
+        # A link/reparse-point inspection failure is a security failure, not a
+        # permissive read failure.  Normalize it so every public check result
+        # remains a deny decision and callers never accidentally continue.
+        return {"schema_version": 1, "decision": "deny", "reason_code": "scope_guard_unavailable", "checked_path_count": 0}
 
 
 def execute_hook_available(config_dir: str | Path) -> bool:

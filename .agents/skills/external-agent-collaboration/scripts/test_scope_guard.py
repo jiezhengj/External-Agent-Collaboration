@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
-from scope_guard import check, require_execute_guard, ScopeGuardError
+from scope_guard import check, execute_hook_available, normalize_request, require_execute_guard, ScopeGuardError
 
 
 def request(**changes: object) -> dict:
@@ -16,6 +17,13 @@ def request(**changes: object) -> dict:
 
 
 def main() -> None:
+    for invalid in (None, {}, {"schema_version": 2}):
+        try:
+            normalize_request(invalid)
+        except ScopeGuardError:
+            pass
+        else:
+            raise AssertionError("invalid scope request must be rejected")
     assert check(request())["decision"] == "allow"
     assert check(request(candidate_paths=["../secret"]))["decision"] == "deny"
     assert check(request(tool_name="Unknown"))["reason_code"] == "scope_guard_denied"
@@ -23,6 +31,14 @@ def main() -> None:
     assert check(bash)["decision"] == "allow"
     bash["command_argv"] = ["rm", "-rf", "."]
     assert check(bash)["decision"] == "deny"
+    assert check(request(tool_name="Write", operation="read"))["decision"] == "deny"
+    assert check(request(tool_name="Read", operation="write"))["decision"] == "deny"
+    assert check(request(tool_name="Bash", operation="execute", candidate_paths=[], command_argv=[]))["decision"] == "deny"
+    assert check(request(tool_name="Read", candidate_paths=[]))["decision"] == "deny"
+    assert check(request(allowed_commands=[""]))["decision"] == "deny"
+    malformed = request()
+    malformed["target_project_root"] = "relative"
+    assert check(malformed)["decision"] == "deny"
     with tempfile.TemporaryDirectory(prefix="scope-guard-") as directory:
         project = Path(directory)
         (project / "docs").mkdir()
@@ -39,6 +55,11 @@ def main() -> None:
             assert exc.code == "scope_guard_unavailable"
         else:
             raise AssertionError("execute must fail closed without a verified hook")
+        settings = project / "settings.json"
+        settings.write_text('{"scope": "verified"}', encoding="utf-8")
+        assert execute_hook_available(project) is True
+        with patch("scope_guard.link_like", side_effect=OSError):
+            assert check(linked)["decision"] == "deny"
     print("scope-guard tests passed")
 
 
