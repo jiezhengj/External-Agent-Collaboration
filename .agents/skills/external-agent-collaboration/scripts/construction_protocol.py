@@ -98,7 +98,8 @@ def workspace_manifest(root: Path, base_revision: str | None = None) -> dict[str
         data = path.read_bytes()
         files.append({"path": rel, "git_state": "unknown", "kind": "regular_file", "size": len(data), "sha256": sha256_bytes(data)})
     payload = {"schema_version": 1, "base_revision": base_revision or git_revision(root), "generated_at": now(), "files": files}
-    payload["manifest_sha256"] = sha256_bytes(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    digest_payload = {"schema_version": payload["schema_version"], "base_revision": payload["base_revision"], "files": payload["files"]}
+    payload["manifest_sha256"] = sha256_bytes(json.dumps(digest_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     return payload
 
 
@@ -109,6 +110,26 @@ def git_revision(root: Path) -> str:
         return "0" * 40
     value = result.stdout.strip()
     return value if len(value) == 40 else "0" * 40
+
+
+def git_dirty_paths(root: Path) -> list[str]:
+    try:
+        result = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all"], capture_output=True, text=True, shell=False, check=False, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        raw = line[3:]
+        if " -> " in raw:
+            raw = raw.split(" -> ", 1)[1]
+        try:
+            relative_path(root, raw)
+        except ConstructionError:
+            continue
+        paths.append(Path(raw).as_posix())
+    return sorted(set(paths))
 
 
 def read_project_json(root: Path, value: str) -> tuple[Path, dict[str, Any]]:
@@ -127,7 +148,7 @@ def write_runtime(path: Path, value: Any) -> None:
     save(path, value)
 
 
-def validate_report(report: Any, goal_id: str, wp: str) -> dict[str, Any]:
+def validate_report(report: Any, goal_id: str, wp: str, root: Path | None = None) -> dict[str, Any]:
     if not isinstance(report, dict) or report.get("report_type") not in REPORT_TYPES or report.get("schema_version") != 1:
         raise ConstructionError("invalid construction_stage_report")
     if report.get("goal_id") != goal_id or report.get("wp_id") != wp:
@@ -144,7 +165,7 @@ def validate_report(report: Any, goal_id: str, wp: str) -> dict[str, Any]:
         if not isinstance(claim, dict) or not isinstance(claim.get("requirement_id"), str) or claim.get("claimed_status") not in {"passed", "failed", "pending", "not_applicable"}:
             raise ConstructionError("invalid requirement claim")
         for evidence in claim.get("claimed_evidence", []):
-            relative_path(Path.cwd(), evidence)
+            relative_path(root or Path.cwd(), evidence)
     for key in ("decisions", "deviations", "commands_claimed", "unresolved_risks", "requested_review"):
         if not isinstance(report.get(key, []), list):
             raise ConstructionError(f"{key} must be an array")
@@ -156,7 +177,7 @@ def validate_report(report: Any, goal_id: str, wp: str) -> dict[str, Any]:
     return report
 
 
-def validate_checkpoint(checkpoint: Any, goal_id: str, wp: str, status: str | None = None) -> dict[str, Any]:
+def validate_checkpoint(checkpoint: Any, goal_id: str, wp: str, status: str | None = None, root: Path | None = None) -> dict[str, Any]:
     if not isinstance(checkpoint, dict) or checkpoint.get("schema_version") != 1:
         raise ConstructionError("invalid checkpoint schema")
     if checkpoint.get("goal_id") != goal_id or checkpoint.get("wp_id") != wp:
@@ -170,7 +191,7 @@ def validate_checkpoint(checkpoint: Any, goal_id: str, wp: str, status: str | No
     for item in checkpoint["changed_files"]:
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):
             raise ConstructionError("checkpoint changed_files entry is invalid")
-        relative_path(Path.cwd(), item["path"])
+        relative_path(root or Path.cwd(), item["path"])
     for item in checkpoint["requirement_results"]:
         if not isinstance(item, dict) or item.get("status") not in {"passed", "failed", "pending", "not_applicable"}:
             raise ConstructionError("checkpoint requirement result is invalid")
@@ -228,7 +249,7 @@ def cmd_start_run(args: argparse.Namespace) -> int:
     directory.mkdir(parents=True, exist_ok=True)
     manifest = workspace_manifest(root)
     run_id = args.run_id or f"run-{uuid.uuid4().hex[:12]}"
-    current = {"schema_version": 1, "goal_id": args.goal_id, "wp_id": args.wp, "run_id": run_id, "status": "running", "current_requirement": args.requirement, "authorized_paths": [relative_path(root, item).as_posix() for item in args.allow_path], "authorized_commands": args.allow_command, "pre_run_manifest_sha256": manifest["manifest_sha256"], "user_dirty_paths": [], "recent_evidence_ids": [], "next_action": args.stop_condition, "updated_at": now()}
+    current = {"schema_version": 1, "goal_id": args.goal_id, "wp_id": args.wp, "run_id": run_id, "status": "running", "current_requirement": args.requirement, "authorized_paths": [relative_path(root, item).as_posix() for item in args.allow_path], "authorized_commands": args.allow_command, "pre_run_manifest_sha256": manifest["manifest_sha256"], "user_dirty_paths": git_dirty_paths(root), "recent_evidence_ids": [], "next_action": args.stop_condition, "updated_at": now()}
     with locked(directory / "current.json"):
         write_runtime(directory / "current.json", current)
         write_runtime(directory / f"pre-{run_id}.workspace-manifest.json", manifest)
@@ -240,14 +261,28 @@ def cmd_materialize(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
     directory = runtime_dir(root, args.goal_id)
     report_path, report = read_project_json(root, args.report)
-    validate_report(report, args.goal_id, args.wp)
+    validate_report(report, args.goal_id, args.wp, root)
     current = load(directory / "current.json", {})
     run_id = current.get("run_id") or args.run_id
     manifest = workspace_manifest(root)
+    pre = load(directory / f"pre-{run_id}.workspace-manifest.json", {})
+    before = {item.get("path"): item for item in pre.get("files", []) if isinstance(item, dict)}
+    after = {item.get("path"): item for item in manifest.get("files", []) if isinstance(item, dict)}
+    dirty = set(current.get("user_dirty_paths", []))
     checkpoint_id = f"CP-{int(args.sequence):03d}-{args.wp}"
-    changed = [{"path": item["path"], "change_type": "modified", "sha256": item["sha256"], "requirement_ids": [], "reason": "runner observed post-run workspace", "risk": "unknown"} for item in manifest["files"] if item["path"] not in {entry.get("path") for entry in load(directory / f"pre-{run_id}.workspace-manifest.json", {}).get("files", [])}]
+    changed = []
+    for path in sorted(set(before) | set(after)):
+        if before.get(path, {}).get("sha256") == after.get(path, {}).get("sha256") and path in before and path in after:
+            continue
+        if path not in before:
+            change_type = "added"
+        elif path not in after:
+            change_type = "deleted"
+        else:
+            change_type = "modified"
+        changed.append({"path": path, "change_type": change_type, "sha256": after.get(path, {}).get("sha256"), "requirement_ids": [], "reason": "runner observed post-run workspace", "risk": "unknown", "owned_by_current_run": path not in dirty})
     checkpoint = {"schema_version": 1, "goal_id": args.goal_id, "checkpoint_id": checkpoint_id, "wp_id": args.wp, "run_id": run_id, "status": report["proposed_status"], "created_at": now(), "base_revision": git_revision(root), "goal_contract_sha256": args.goal_contract_sha256, "implementation_summary": report["implementation_summary"], "requirement_results": [{"requirement_id": item["requirement_id"], "status": item["claimed_status"], "evidence_ids": item.get("claimed_evidence", [])} for item in report["requirement_claims"]], "changed_files": changed, "decisions": report.get("decisions", []), "deviations": report.get("deviations", []), "unresolved_risks": report.get("unresolved_risks", []), "requested_review": report.get("requested_review", []), "proposed_next_wp": args.next_wp, "manifest_sha256": manifest["manifest_sha256"], "report_path": str(report_path.relative_to(root))}
-    validate_checkpoint(checkpoint, args.goal_id, args.wp)
+    validate_checkpoint(checkpoint, args.goal_id, args.wp, root=root)
     with locked(directory / "current.json"):
         write_runtime(directory / f"{checkpoint_id}.checkpoint.json", checkpoint)
         write_runtime(directory / "workspace-manifest.json", manifest)
@@ -262,7 +297,10 @@ def cmd_validate_checkpoint(args: argparse.Namespace) -> int:
     directory = runtime_dir(root, args.goal_id)
     path = directory / f"{args.checkpoint}.checkpoint.json" if args.checkpoint else directory / "checkpoint.json"
     checkpoint = load(path, None)
-    validate_checkpoint(checkpoint, args.goal_id, args.wp, args.status)
+    validate_checkpoint(checkpoint, args.goal_id, args.wp, args.status, root)
+    current_manifest = workspace_manifest(root)
+    if checkpoint.get("manifest_sha256") != current_manifest.get("manifest_sha256"):
+        raise ConstructionError("checkpoint is stale: workspace manifest changed", "construction_checkpoint_stale")
     print(json.dumps({"valid": True, "checkpoint_id": checkpoint["checkpoint_id"], "manifest_sha256": checkpoint.get("manifest_sha256")}, ensure_ascii=False))
     return 0
 
@@ -272,6 +310,10 @@ def cmd_write_review(args: argparse.Namespace) -> int:
     directory = runtime_dir(root, args.goal_id)
     path, review = read_project_json(root, args.review)
     validate_review(review, args.goal_id, args.checkpoint)
+    checkpoint = load(directory / f"{args.checkpoint}.checkpoint.json", None)
+    validate_checkpoint(checkpoint, args.goal_id, str(checkpoint.get("wp_id")), root=root)
+    if review.get("reviewed_manifest_sha256") != checkpoint.get("manifest_sha256"):
+        raise ConstructionError("review manifest does not match checkpoint")
     with locked(directory / "current.json"):
         write_runtime(directory / f"{review['review_id']}.review.json", review)
         if args.markdown:
@@ -302,6 +344,10 @@ def cmd_accept(args: argparse.Namespace) -> int:
     digest = sha256_bytes(json.dumps(review, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     if args.review_sha256 != digest:
         raise ConstructionError("review hash mismatch")
+    ack = load(directory / f"{args.review_id}.acknowledgement.json", None)
+    validate_ack(ack, review)
+    if any(item.get("status") not in {"accepted", "completed"} for item in ack.get("responses", [])):
+        raise ConstructionError("checkpoint cannot be accepted with unaccepted finding responses")
     marker = {"checkpoint_id": args.checkpoint, "review_sha256": digest, "accepted_at": now(), "actor": "codex"}
     with locked(directory / "current.json"):
         write_runtime(directory / f"{args.wp}.accepted", marker)

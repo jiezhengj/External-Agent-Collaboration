@@ -68,7 +68,7 @@ def main() -> int:
             raise ValueError("Only a completed execute result can receive an independent critique.")
         reviewer = review_provider(str(record.get("provider")), args.provider)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        write_failure_event(__import__("workspace_context").default_context(), invocation_id=args.invocation_id, error_code="validation_failed", stage="review_execution", message=str(exc))
+        write_failure_event(__import__("workspace_context").default_context(), invocation_id=args.invocation_id, error_code="validation_failed", stage="outcome_validation", message=str(exc))
         print(str(exc), file=sys.stderr)
         return 2
     handoff = CONTROL / "handoffs" / f"review-{args.run_id}.md"

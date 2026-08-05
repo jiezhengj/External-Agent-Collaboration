@@ -7,8 +7,8 @@
     "invocation_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
     "parent_invocation_id": {"type": ["string", "null"]},
     "occurred_at": {"type": "string"},
-    "terminal_status": {"type": "string", "enum": ["failed", "blocked", "cancelled"]},
-    "stage": {"type": "string"},
+    "terminal_status": {"type": "string", "enum": ["failed_preflight", "failed_invocation", "blocked_by_permission", "failed_validation", "rolled_back", "rollback_failed", "cancelled_by_host"]},
+    "stage": {"type": "string", "enum": ["argument_parsing", "workspace_resolution", "handoff_validation", "classification", "routing", "trust", "readiness", "invocation", "response_parsing", "scope_validation", "outcome_validation", "rollback", "state_persistence", "unexpected"]},
     "error_code": {"type": "string"},
     "error_category": {"type": "string"},
     "retryable": {"type": "boolean"},
@@ -17,6 +17,7 @@
     "handoff_sha256": {"type": ["string", "null"]},
     "handoff_bytes": {"type": ["integer", "null"]},
     "message": {"type": ["string", "null"], "maxLength": 240},
+    "skill_runtime_version": {"type": "string"},
     "redaction_version": {"const": "failure-event-v1"}
   },
   "additionalProperties": true

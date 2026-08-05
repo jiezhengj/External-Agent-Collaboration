@@ -95,7 +95,7 @@ Return this JSON contract only:\n{collaborate.response_contract_instruction('com
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
         try:
             from failure_events import write_failure_event
-            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="validation_failed", stage="antigravity_execute", selected_harness="antigravity", message=str(exc), working_directory=args.working_directory)
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="validation_failed", stage="outcome_validation", selected_harness="antigravity", message=str(exc), working_directory=args.working_directory)
         except Exception:
             pass
         print(str(exc))

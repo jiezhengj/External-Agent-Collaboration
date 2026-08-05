@@ -208,7 +208,7 @@ def main() -> int:
     except collaborate.CollaborationError as exc:
         try:
             from failure_events import write_failure_event
-            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="classification_route_mismatch" if "route" in str(exc).lower() else "validation_failed", stage="harness_route", message=str(exc), action=args.action, task_type=args.task_type, mode=args.mode, requested_harness=args.harness, working_directory=args.working_directory)
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="classification_route_mismatch" if "route" in str(exc).lower() else "validation_failed", stage="routing", message=str(exc), action=args.action, task_type=args.task_type, mode=args.mode, requested_harness=args.harness, working_directory=args.working_directory)
         except Exception:
             pass
         print(str(exc), file=sys.stderr)

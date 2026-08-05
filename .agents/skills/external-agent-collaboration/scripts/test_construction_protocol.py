@@ -42,6 +42,9 @@ def main() -> None:
         assert run(root, "record-ack", *common, "--review-id", "RV-001", "--ack", "ack.json")["valid"] is True
         assert run(root, "accept-checkpoint", *common, "--wp", "WP-0", "--checkpoint", "CP-001-WP-0", "--review-id", "RV-001", "--review-sha256", reviewed["review_sha256"])["accepted"] is True
         assert run(root, "resume-summary", *common)["status"] == "ready_for_review"
+        (root / "scripts" / "new.py").write_text("print('drifted')\n", encoding="utf-8")
+        stale = subprocess.run([sys.executable, str(SCRIPT), "validate-checkpoint", *common, "--wp", "WP-0", "--checkpoint", "CP-001-WP-0"], cwd=root, capture_output=True, text=True, check=False)
+        assert stale.returncode != 0 and "stale" in stale.stderr
     print("construction-protocol tests passed")
 
 

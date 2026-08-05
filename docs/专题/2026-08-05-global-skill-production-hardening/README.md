@@ -11,7 +11,7 @@
 |目标施工者|Luna 级模型；不假设施工者能自行补齐未写明的架构决定|
 |施工编排|一个持续 Goal 覆盖 WP-0 至 WP-7；每个 WP 包含一个或多个 Run，并在进入下一 WP 前通过 Codex Review Gate|
 |目标平台|macOS 与原生 Windows；Windows 不依赖 WSL、Git Bash 或 POSIX 兼容层|
-|当前回归证据|macOS 本机 `run_regression.py`：43 个脚本通过；`quality_gate.py --privacy` 通过；新增跨项目、失败 ledger、scope guard、事务、施工协议和安装器测试已纳入回归|
+|当前回归证据|macOS 本机 `run_regression.py`：48 个脚本通过；`quality_gate.py --privacy` 通过；新增跨项目、失败 ledger、真实 PreToolUse scope hook、事务、施工协议、状态迁移和 200 次并发测试已纳入回归|
 |设计复核|2026-08-05，Claude Code harness + DeepSeek，run `1785899848-0adfeaa0`，结论 `ready_with_revisions`；6 个 P0 与全部 P1/P2 文档歧义已回写本文|
 |完成判定|仍仅以第 18 节的可执行完成门槛为准；本机通过不替代 Windows 原生验证、真实最小 smoke、实际 hook 能力证据和最终 Codex Review Gate|
 
@@ -1343,7 +1343,7 @@ CI 必须：
 - 新 DEC：跨项目上下文/状态归属、中央 bad-case 隐私 schema；
 - `README.md`/`README.en.md`/`README.zh.md`、`AGENTS.md`/`AGENTS.zh.md`、`SKILL.md`/`SKILL.zh.md`：使用和边界一致。
 
-不得先把“计划”写成“已实现”。专题入口在施工中保持“实施中”，全部门槛通过后才改“已完成”。
+不得先把“计划”写成“已实现”。专题入口在施工中保持“实施中”，全部门槛通过后才改“已完成”。当前 macOS 本机回归已扩展至 48 个脚本，但 Windows 原生运行、CI 必需检查、真实跨项目只读 smoke、完整 coverage evidence 和 8 个 WP 的 accepted packet 仍未形成可发布证据。
 
 ## 18. 可量化完成契约
 

@@ -98,8 +98,8 @@ def execute_hook_available(config_dir: str | Path) -> bool:
     return any(path.is_file() and "scope" in path.read_text(encoding="utf-8", errors="ignore").lower() for path in candidates)
 
 
-def require_execute_guard(config_dir: str | Path, *, context_only: bool = False) -> None:
-    if context_only:
+def require_execute_guard(config_dir: str | Path, *, context_only: bool = False, bridge_available: bool = False) -> None:
+    if context_only or bridge_available:
         return
     if not execute_hook_available(config_dir):
         raise ScopeGuardError("No verified Claude scope hook is installed; execute is fail-closed.", "scope_guard_unavailable")

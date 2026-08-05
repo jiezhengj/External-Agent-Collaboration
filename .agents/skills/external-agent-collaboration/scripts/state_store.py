@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -20,36 +21,52 @@ def locked(path: Path, timeout_seconds: float = 10.0) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
     handle = lock_path.open("a+b")
+    acquired = False
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
     try:
         if os.name == "nt":
             import msvcrt
             # msvcrt.locking is byte-range based and requires a one-byte file.
             handle.seek(0)
             handle.write(b"0")
+            handle.truncate(1)
             handle.flush()
-            handle.seek(0)
-            try:
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            except OSError as exc:
-                raise StateStoreError("state_lock_timeout") from exc
+            while True:
+                handle.seek(0)
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    acquired = True
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise StateStoreError("state_lock_timeout") from exc
+                    time.sleep(0.01)
         else:
             import fcntl
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            except (AttributeError, OSError) as exc:
-                raise StateStoreError("state_lock_unsupported") from exc
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                    break
+                except BlockingIOError as exc:
+                    if time.monotonic() >= deadline:
+                        raise StateStoreError("state_lock_timeout") from exc
+                    time.sleep(0.01)
+                except (AttributeError, OSError) as exc:
+                    raise StateStoreError("state_lock_unsupported") from exc
         yield
     finally:
-        try:
-            if os.name == "nt":
-                import msvcrt
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        except (AttributeError, OSError):
-            pass
+        if acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            except (AttributeError, OSError):
+                pass
         handle.close()
 
 

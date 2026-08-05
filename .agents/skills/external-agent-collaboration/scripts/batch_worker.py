@@ -81,6 +81,6 @@ def main()->int:
  try:return run(a)
  except (batch.BatchError,collaborate.CollaborationError) as e:
   from failure_events import write_failure_event
-  write_failure_event(collaborate.CONTEXT, invocation_id=a.invocation_id, error_code="validation_failed", stage="batch_worker", message=str(e), requested_provider=a.provider)
+  write_failure_event(collaborate.CONTEXT, invocation_id=a.invocation_id, error_code="validation_failed", stage="invocation", message=str(e), requested_provider=a.provider)
   print(str(e),file=sys.stderr);return 2
 if __name__=="__main__":raise SystemExit(main())

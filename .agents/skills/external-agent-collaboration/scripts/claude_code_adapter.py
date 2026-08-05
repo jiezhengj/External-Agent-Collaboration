@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
 from typing import Any
 
 from harness_state import CLAUDE_CODE, external_session_id
@@ -34,6 +39,7 @@ class ClaudeInvocation:
     response_schema: dict[str, Any] | None = None
     stream_diagnostics: bool = False
     response_transport: str = "direct"
+    scope_guard: dict[str, Any] | None = None
 
 
 class ClaudeCodeAdapter:
@@ -98,10 +104,38 @@ class ClaudeCodeAdapter:
             command.append("--no-session-persistence")
         return command
 
+    @staticmethod
+    def _hook_command(config_path: Path) -> str:
+        argv = [sys.executable, str(Path(__file__).with_name("scope_guard_hook.py")), "--config", str(config_path)]
+        return subprocess_command(argv)
+
+    @staticmethod
+    def _settings(scope_guard: dict[str, Any], config_path: Path) -> Path:
+        hook_settings = {
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": ".*",
+                    "hooks": [{"type": "command", "command": ClaudeCodeAdapter._hook_command(config_path)}],
+                }]
+            }
+        }
+        settings_path = config_path.with_name("settings.json")
+        settings_path.write_text(json.dumps(hook_settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return settings_path
+
     def invoke(self, request: ClaudeInvocation) -> tuple[int, str, str]:
         environment = request.environment.copy()
         environment["CLAUDE_CONFIG_DIR"] = request.config_dir
         relay: BufferedProviderProxy | None = None
+        temporary: tempfile.TemporaryDirectory[str] | None = None
+        if request.scope_guard is not None:
+            temporary = tempfile.TemporaryDirectory(prefix="codex-scope-")
+            directory = Path(temporary.name)
+            config_path = directory / "scope-config.json"
+            config_path.write_text(json.dumps(request.scope_guard, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            settings_path = self._settings(request.scope_guard, config_path)
+        else:
+            settings_path = None
         if request.response_transport == "buffered_sse":
             upstream = environment.get("ANTHROPIC_BASE_URL")
             relay = BufferedProviderProxy(upstream or "")
@@ -109,12 +143,17 @@ class ClaudeCodeAdapter:
         elif request.response_transport != "direct":
             raise ClaudeCodeAdapterError(f"Unsupported Claude response transport: {request.response_transport}")
         try:
+            command = self.command(request)
+            if settings_path is not None:
+                command.extend(["--settings", str(settings_path)])
             completed = run_bounded(
-                self.command(request), cwd=request.workdir, env=environment, timeout=request.timeout,
+                command, cwd=request.workdir, env=environment, timeout=request.timeout,
             )
         finally:
             if relay is not None:
                 relay.close()
+            if temporary is not None:
+                temporary.cleanup()
         if completed.timed_out:
             terminal = self._terminal_from_output(completed.stdout, request.stream_diagnostics)
             if terminal is not None:
@@ -216,3 +255,10 @@ class ClaudeCodeAdapter:
             except json.JSONDecodeError as exc:
                 raise ClaudeCodeAdapterError(f"structured_output is not valid JSON: {exc.msg}") from exc
         return value, "structured_output"
+
+
+def subprocess_command(argv: list[str]) -> str:
+    """Quote a hook command for Claude's cross-platform command launcher."""
+    if os.name == "nt":
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)

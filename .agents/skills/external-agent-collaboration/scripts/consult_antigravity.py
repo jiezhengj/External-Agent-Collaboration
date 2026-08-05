@@ -99,7 +99,7 @@ def main() -> int:
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
         try:
             from failure_events import write_failure_event
-            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="response_contract_failed" if "response" in str(exc).lower() else "provider_unclassified_failure", stage="antigravity_consult", selected_harness="antigravity", action=args.action, mode="analyze", message=str(exc), working_directory=args.working_directory)
+            write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="response_contract_failed" if "response" in str(exc).lower() else "provider_unclassified_failure", stage="response_parsing" if "response" in str(exc).lower() else "invocation", selected_harness="antigravity", action=args.action, mode="analyze", message=str(exc), working_directory=args.working_directory)
         except Exception:
             pass
         print(str(exc))

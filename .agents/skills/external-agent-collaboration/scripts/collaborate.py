@@ -567,7 +567,7 @@ def initial_toolset(action: str, commands: list[str]) -> list[str]:
     return CLAUDE_ADAPTER.capabilities(action, commands)
 
 
-def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, session: dict[str, Any] | None, ephemeral: bool, fork_session: bool, commands: list[str], timeout: int, stream_diagnostics: bool = False, response_contract: str = "standard") -> tuple[int, str, str]:
+def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, session: dict[str, Any] | None, ephemeral: bool, fork_session: bool, commands: list[str], timeout: int, stream_diagnostics: bool = False, response_contract: str = "standard", scope_guard: dict[str, Any] | None = None) -> tuple[int, str, str]:
     launcher = str(profile.get("launcher", "claude"))
     tools = initial_toolset(action, commands)
     allowed_tools = tools.copy()
@@ -582,6 +582,7 @@ def invoke(profile: dict[str, Any], action: str, prompt: str, workdir: Path, ses
         response_schema={"construction_stage_report": CONSTRUCTION_STAGE_REPORT_SCHEMA, "construction_review_ack": CONSTRUCTION_ACK_SCHEMA}.get(response_contract, RESPONSE_CONTRACT_SCHEMA if response_contract == "standard" else None),
         stream_diagnostics=stream_diagnostics,
         response_transport=str(profile.get("response_transport", "direct")),
+        scope_guard=scope_guard,
     ))
 
 
@@ -1025,7 +1026,7 @@ def main() -> int:
     except SystemExit as exc:
         if exc.code != 0:
             try:
-                write_failure_event(default_context(), invocation_id=invocation_id, error_code="invalid_arguments", stage="argument_parse", message="argument parsing failed")
+                write_failure_event(default_context(), invocation_id=invocation_id, error_code="invalid_arguments", stage="argument_parsing", terminal_status="failed_preflight", message="argument parsing failed")
             except Exception:
                 pass
         raise
@@ -1151,7 +1152,7 @@ def main() -> int:
             log["profile_failover"] = {"from": failed_provider, "to": provider, "failure_kind": "configuration"}
         if args.action == "execute":
             try:
-                require_execute_guard(str(profile.get("config_dir", "")))
+                require_execute_guard(str(profile.get("config_dir", "")), bridge_available=True)
             except ScopeGuardError as exc:
                 raise CollaborationError(str(exc)) from exc
         log.update({"provider": provider, "auto_selected": auto_selected, "session_key": session.get("key") if session else None, "routing": route, "provider_health_before": provider_health_status(health, provider)})
@@ -1179,7 +1180,14 @@ def main() -> int:
         goal_run_started = goal_contract is not None
         provider_attempts = 1
         invocation_timeout = min(args.timeout, max(1, int(args.max_duration_seconds - (time.monotonic() - started_monotonic)))) if args.max_duration_seconds is not None else args.timeout
-        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, invocation_timeout, args.stream_diagnostics, args.response_contract)
+        scope_config = {
+            "schema_version": 1,
+            "invocation_id": invocation_id,
+            "target_project_root": str(PROJECT_ROOT),
+            "allowed_paths": [path.as_posix() for path in allow_paths],
+            "allowed_commands": commands,
+        } if args.action == "execute" else None
+        exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, session, args.ephemeral, effective_fork, commands, invocation_timeout, args.stream_diagnostics, args.response_contract, scope_config)
         log.update({"exit_code": exit_code, "stderr": one_line(stderr, 1200)})
 
         if exit_code != 0:
@@ -1200,7 +1208,7 @@ def main() -> int:
             session = None
             provider_attempts += 1
             invocation_timeout = min(args.timeout, max(1, int(args.max_duration_seconds - (time.monotonic() - started_monotonic)))) if args.max_duration_seconds is not None else args.timeout
-            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, invocation_timeout, args.stream_diagnostics, args.response_contract)
+            exit_code, stdout, stderr = invoke(profile, args.action, prompt, workdir, None, args.ephemeral, False, commands, invocation_timeout, args.stream_diagnostics, args.response_contract, scope_config)
             log.update({"provider_failover": {"from": failed_provider, "to": provider, "failure_kind": failure_kind}, "exit_code": exit_code, "stderr": one_line(stderr, 1200)})
             if exit_code != 0:
                 fallback_kind = classify_failure(exit_code, stderr)
@@ -1356,7 +1364,7 @@ def main() -> int:
                 CONTEXT,
                 invocation_id=invocation_id,
                 terminal_status="failed",
-                stage="runtime",
+                stage="state_persistence" if "persistence" in str(exc).lower() or "goal aggregation" in str(exc).lower() else "response_parsing" if "json" in error_text or "response" in error_text else "scope_validation" if "scope_guard" in error_text else "outcome_validation" if "outcome" in error_text else "unexpected",
                 error_code=failure_code,
                 error_category="collaboration",
                 action=args.action,

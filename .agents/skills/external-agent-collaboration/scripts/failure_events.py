@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from workspace_context import WorkspaceContext
+from version import SKILL_RUNTIME_VERSION
 
 
 SCHEMA_VERSION = 1
@@ -76,6 +77,8 @@ ERROR_METADATA = {
     "unexpected_internal_error": ("internal", False, "analyze_bad_case_before_retry"),
 }
 ERROR_CODES = frozenset(ERROR_METADATA)
+TERMINAL_STATUSES = frozenset({"failed_preflight", "failed_invocation", "blocked_by_permission", "failed_validation", "rolled_back", "rollback_failed", "cancelled_by_host"})
+STAGES = frozenset({"argument_parsing", "workspace_resolution", "handoff_validation", "classification", "routing", "trust", "readiness", "invocation", "response_parsing", "scope_validation", "outcome_validation", "rollback", "state_persistence", "unexpected"})
 
 
 def _utc_now() -> str:
@@ -126,7 +129,7 @@ def _skill_revision(context: WorkspaceContext | None) -> tuple[str | None, bool 
             return revision, bool(status.stdout.strip())
     except (OSError, subprocess.TimeoutExpired):
         pass
-    return "runtime:2.0.0", None
+    return f"runtime:{SKILL_RUNTIME_VERSION}", None
 
 
 def event_path(context: WorkspaceContext, invocation_id: str) -> Path:
@@ -164,6 +167,7 @@ def write_failure_event(
     rollback_succeeded: bool | None = None,
     message: str | None = None,
     working_directory: str | None = None,
+    parent_invocation_id: str | None = None,
 ) -> Path | None:
     if context is None:
         return None
@@ -171,13 +175,17 @@ def write_failure_event(
         return None
     if error_code not in ERROR_CODES:
         error_code = "unexpected_internal_error"
+    if terminal_status not in TERMINAL_STATUSES:
+        terminal_status = "failed_invocation"
+    if stage not in STAGES:
+        stage = "unexpected"
     metadata_category, metadata_retryable, metadata_next_action = ERROR_METADATA[error_code]
     skill_revision, skill_dirty = _skill_revision(context)
     path = event_path(context, invocation_id)
     record: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "invocation_id": invocation_id,
-        "parent_invocation_id": None,
+        "parent_invocation_id": parent_invocation_id,
         "occurred_at": _utc_now(),
         "terminal_status": terminal_status,
         "stage": stage,
@@ -200,6 +208,7 @@ def write_failure_event(
         "handoff_sha256": handoff_sha256,
         "handoff_bytes": handoff_bytes,
         "skill_revision": skill_revision,
+        "skill_runtime_version": SKILL_RUNTIME_VERSION,
         "skill_dirty": skill_dirty,
         "dirty_before": dirty_before,
         "run_id": run_id,
