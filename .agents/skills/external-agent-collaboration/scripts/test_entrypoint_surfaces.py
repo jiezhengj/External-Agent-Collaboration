@@ -227,7 +227,15 @@ def main() -> None:
                 {"type": "unsupported"},
             ], ["docs/a.txt"], root, [], [[sys.executable, "-c", "pass"]])
             assert results[0]["passed"] and results[5]["passed"] and "error" in results[-1]
-            assert collaborate.bash_create_commands([root / "docs" / "new.txt"])
+            if collaborate.supports_posix_shell_fallback():
+                assert collaborate.bash_create_commands([root / "docs" / "new.txt"])
+            else:
+                try:
+                    collaborate.bash_create_commands([root / "docs" / "new.txt"])
+                except collaborate.CollaborationError:
+                    pass
+                else:
+                    raise AssertionError("Windows must not expose a POSIX bash fallback")
             assert collaborate.write_topic_state("surface-test", root, "goal", "stop", "completed", "consult", [], "outputs/x.json")
             checkpoint = collaborate.copy_checkpoint("surface-test")
             assert checkpoint.is_dir()
