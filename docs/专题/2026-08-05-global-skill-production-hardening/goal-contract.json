@@ -49,11 +49,6 @@
     {"id": "unresolved_p0_count", "required": true, "verification": "review"},
     {"id": "unresolved_p1_count", "required": true, "verification": "review"}
   ],
-  "completion_policy": {
-    "require_all": true,
-    "review": "codex",
-    "user_acceptance": "not_required",
-    "platforms": ["macos", "windows"]
-  },
+  "completion_policy": {"require_all": true, "review": "codex", "user_acceptance": "not_required", "platforms": ["macos", "windows"]},
   "stop_policy": {"max_attempts": 32, "on_blocked": "pause"}
 }

@@ -37,6 +37,15 @@ def main() -> int:
         "--contract",
         ".agents/skills/external-agent-collaboration/references/goal-contract.example.json",
     ])
+    run([
+        sys.executable,
+        str(SCRIPT_DIR / "goal_lifecycle.py"),
+        "--project-root",
+        ".",
+        "validate",
+        "--contract",
+        "docs/专题/2026-08-05-global-skill-production-hardening/goal-contract.json",
+    ])
     print(f"cross-platform regression passed: {len(tests)} test scripts")
     return 0
 

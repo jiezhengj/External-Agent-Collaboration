@@ -22,7 +22,10 @@ def _relative(root: Path, value: str) -> str:
     candidate = Path(value)
     if candidate.is_absolute():
         try:
-            candidate = candidate.resolve().relative_to(root.resolve())
+            # Normalize lexical components without resolving symlinks.  The
+            # downstream ScopeGuard must still inspect every link-like path
+            # component, including a link whose target stays inside root.
+            candidate = Path(os.path.normpath(os.fspath(candidate))).relative_to(Path(os.path.normpath(os.fspath(root))))
         except ValueError as exc:
             raise ScopeGuardError("hook candidate path is outside target project", "scope_guard_denied") from exc
     if not candidate.parts or ".." in candidate.parts:
@@ -63,7 +66,11 @@ def _argv(tool: str, value: dict[str, Any]) -> list[str]:
 def build_request(event: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(event, dict):
         raise ScopeGuardError("Claude hook event must be an object")
-    root = Path(str(config["target_project_root"])).resolve()
+    # Keep the lexical spelling from Claude's event/config so macOS `/var`
+    # versus `/private/var` aliases do not turn an in-root path into a false
+    # outside-root decision.  ScopeGuard performs the canonical containment
+    # check after the path has been reduced to a project-relative form.
+    root = Path(str(config["target_project_root"]))
     tool = event.get("tool_name") or event.get("toolName")
     if not isinstance(tool, str) or not tool:
         raise ScopeGuardError("Claude hook event has no tool_name")

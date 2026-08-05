@@ -81,9 +81,9 @@ def main() -> int:
         status = "blocked_by_permission" if permission == "blocked_by_permission" else "completed" if permission == "allowed" and response is not None else "failed"
         run_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
         output = collaborate.output_path(run_id, "outputs")
-        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "routing": {"basis": args.routing_basis}, "topic": args.topic, "action": args.action, "permission_state": permission, "response": collaborate.redact_return_value(response) if response is not None else None, "result": collaborate.redact_return_value(result), "result_contract": {"valid": response is not None, "errors": errors}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}
+        record = {"invocation_id": args.invocation_id, "run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "routing": {"basis": args.routing_basis}, "topic": args.topic, "action": args.action, "permission_state": permission, "response": collaborate.redact_return_value(response) if response is not None else None, "result": collaborate.redact_return_value(result), "result_contract": {"valid": response is not None, "errors": errors}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}
         collaborate.write_json(output, record)
-        collaborate.write_json(collaborate.output_path(run_id, "logs"), {"run_id": run_id, "status": status, "harness": "antigravity", "profile": args.profile, "routing_basis": args.routing_basis, "response_contract_valid": response is not None, "contract_errors": errors, "permission_state": permission, "finished_at": collaborate.now()})
+        collaborate.write_json(collaborate.output_path(run_id, "logs"), {"invocation_id": args.invocation_id, "run_id": run_id, "status": status, "harness": "antigravity", "profile": args.profile, "routing_basis": args.routing_basis, "response_contract_valid": response is not None, "contract_errors": errors, "permission_state": permission, "finished_at": collaborate.now()})
         conversation_id = result.get("conversation_id")
         if status == "completed" and isinstance(conversation_id, str) and conversation_id:
             if session is None:
@@ -94,7 +94,7 @@ def main() -> int:
             topics = collaborate.topics_registry()
             collaborate.register_topic_session(topics, session)
             collaborate.write_json(collaborate.TOPICS_FILE, topics)
-        print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "routing": {"basis": args.routing_basis}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT)), "result_contract_failed": response is None}, ensure_ascii=False, indent=2))
+        print(json.dumps({"invocation_id": args.invocation_id, "run_id": run_id, "status": status, "harness": "antigravity", "routing": {"basis": args.routing_basis}, "output_path": str(output.relative_to(collaborate.PROJECT_ROOT)), "result_contract_failed": response is None}, ensure_ascii=False, indent=2))
         return 0 if status == "completed" else 3
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
         try:

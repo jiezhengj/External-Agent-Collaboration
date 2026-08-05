@@ -243,6 +243,15 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
         write_json(path, state)
 
 
+def update_state(path: Path, contract: dict[str, Any], mutate) -> dict[str, Any]:
+    """Atomically load, mutate and persist one Goal state under one lock."""
+    with locked(path):
+        state = load_state(path, contract)
+        updated = mutate(state)
+        write_json(path, updated)
+        return updated
+
+
 def ensure_can_start_run(state: dict[str, Any], contract: dict[str, Any]) -> None:
     _require(state["status"] == "active", f"Goal is {state['status']} and cannot start a Run.")
     maximum = contract.get("stop_policy", {}).get("max_attempts", 1)

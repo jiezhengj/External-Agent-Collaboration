@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -136,7 +137,14 @@ def antigravity_command(args: argparse.Namespace, basis: str) -> list[str]:
 
 def run_child(argv: list[str]) -> int:
     try:
-        return subprocess.run(argv, cwd=collaborate.CONTEXT.target_workdir, check=False).returncode
+        completed = subprocess.run(argv, cwd=collaborate.CONTEXT.target_workdir, capture_output=True, text=True, check=False)
+        run_child.child_stdout = completed.stdout
+        run_child.child_stderr = completed.stderr
+        if completed.stdout:
+            print(completed.stdout, end="")
+        if completed.stderr:
+            print(completed.stderr, end="", file=sys.stderr)
+        return completed.returncode
     except OSError as exc:
         from failure_events import write_failure_event
         write_failure_event(collaborate.CONTEXT, invocation_id=getattr(run_child, "invocation_id", "inv-router"), error_code="child_process_launch_failed", stage="invocation", message=str(exc), working_directory=str(collaborate.CONTEXT.target_workdir))
@@ -203,7 +211,29 @@ def main() -> int:
         if result != 0:
             from failure_events import event_path, write_failure_event
             if not event_path(collaborate.CONTEXT, args.invocation_id).exists():
-                write_failure_event(collaborate.CONTEXT, invocation_id=args.invocation_id, error_code="child_process_unclassified", stage="invocation", child_exit_code=result, action=args.action, requested_harness=args.harness, requested_provider=args.provider, working_directory=args.working_directory)
+                child_payload: dict[str, Any] = {}
+                try:
+                    candidate = json.loads(getattr(run_child, "child_stdout", "").strip().splitlines()[-1])
+                    if isinstance(candidate, dict):
+                        child_payload = candidate
+                except (json.JSONDecodeError, IndexError):
+                    pass
+                blocked = child_payload.get("status") == "blocked_by_permission"
+                write_failure_event(
+                    collaborate.CONTEXT,
+                    invocation_id=args.invocation_id,
+                    error_code="permission_blocked" if blocked else "child_process_unclassified",
+                    terminal_status="blocked_by_permission" if blocked else "failed_invocation",
+                    stage="invocation",
+                    child_exit_code=result,
+                    action=args.action,
+                    requested_harness=args.harness,
+                    selected_harness=str(child_payload.get("harness")) if child_payload.get("harness") else None,
+                    requested_provider=args.provider,
+                    provider_invoked=bool(child_payload.get("run_id")),
+                    run_id=str(child_payload.get("run_id")) if child_payload.get("run_id") else None,
+                    working_directory=args.working_directory,
+                )
         return result
     except collaborate.CollaborationError as exc:
         try:

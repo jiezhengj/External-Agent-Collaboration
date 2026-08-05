@@ -149,6 +149,14 @@ def main() -> None:
         outer = collaborate.parse_result(stdout)
         response, errors = collaborate.parse_response_contract(outer)
         assert response == UTF8_VALID and errors == []
+        scope_config = {"schema_version": 1, "invocation_id": "scope-test", "target_project_root": str(root), "allowed_paths": ["docs"], "allowed_commands": ["python -m pytest"]}
+        code, _stdout, stderr = collaborate.invoke(
+            {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path), "PYTHONHASHSEED": "0"}},
+            "execute", "test", root, None, True, False, ["python -m pytest"], 10, False, "standard", scope_config,
+        )
+        assert code == 0 and not stderr
+        scope_argv = json.loads(argv_path.read_text(encoding="utf-8"))
+        assert "--settings" in scope_argv
         code, _stdout, stderr = collaborate.invoke(
             {"launcher": str(launcher), "config_dir": str(root), "environment": {"ARGS_FILE": str(argv_path), "PYTHONHASHSEED": "0"}},
             "consult", "test", root, None, True, False, [], 10, True,

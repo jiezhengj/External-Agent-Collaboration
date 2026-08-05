@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from claude_code_adapter import ClaudeCodeAdapter, ClaudeCodeAdapterError, ClaudeInvocation
-from goal_lifecycle import GoalError, default_state_path, ensure_can_start_run, load_contract, load_state, record_run, save_state, state_summary
+from goal_lifecycle import GoalError, default_state_path, ensure_can_start_run, load_contract, load_state, record_run, save_state, state_summary, update_state
 from harness_state import CLAUDE_CODE, RUNTIME_SCHEMA_VERSION, claude_session_record, external_session_id, session_harness, state_feature_enabled
 from platform_support import (
     capability_matches_host,
@@ -1297,8 +1297,7 @@ def main() -> int:
         write_json(output_file, result_record)
         if goal_contract is not None and goal_state is not None and goal_state_path is not None:
             try:
-                goal_state = record_run(goal_state, goal_contract, result_record)
-                save_state(goal_state_path, goal_state)
+                goal_state = update_state(goal_state_path, goal_contract, lambda state: record_run(state, goal_contract, result_record))
                 goal_recorded = True
                 result_record["goal"] = {"goal_id": goal_state["goal_id"], "status": goal_state["status"], "state_path": str(goal_state_path.relative_to(PROJECT_ROOT)), "summary": state_summary(goal_state)}
                 write_json(output_file, result_record)
@@ -1341,8 +1340,7 @@ def main() -> int:
         if goal_run_started and goal_contract is not None and goal_state is not None and goal_state_path is not None and not goal_recorded:
             try:
                 failed_run = {"run_id": run_id, "status": "failed", "action": args.action, "host_platform": host_platform(), "output_path": str(output_path(run_id, "outputs").relative_to(PROJECT_ROOT)), "outcome_results": []}
-                goal_state = record_run(goal_state, goal_contract, failed_run)
-                save_state(goal_state_path, goal_state)
+                goal_state = update_state(goal_state_path, goal_contract, lambda state: record_run(state, goal_contract, failed_run))
                 log["goal"] = state_summary(goal_state)
             except (GoalError, OSError) as goal_exc:
                 log["goal_error"] = str(goal_exc)

@@ -88,9 +88,9 @@ Return this JSON contract only:\n{collaborate.response_contract_instruction('com
             collaborate.restore_changed(before, collaborate.manifest(collaborate.PROJECT_ROOT), checkpoint)
         status = "blocked_by_permission" if permission == "blocked_by_permission" else "failed" if failed else "completed"
         output = collaborate.output_path(run_id, "outputs")
-        record = {"run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "topic": args.topic, "action": "execute", "permission_state": permission, "stream_diagnostics": diagnostics, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "result_contract": {"valid": response is not None, "errors": errors}}
+        record = {"invocation_id": args.invocation_id, "run_id": run_id, "status": status, "harness": "antigravity", "harness_profile": args.profile, "topic": args.topic, "action": "execute", "permission_state": permission, "stream_diagnostics": diagnostics, "changed_files": changed, "restored_violations": violations, "outcome_results": outcome_results, "result_contract": {"valid": response is not None, "errors": errors}}
         collaborate.write_json(output, record)
-        print(json.dumps({"run_id": run_id, "status": status, "harness": "antigravity", "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}, ensure_ascii=False))
+        print(json.dumps({"invocation_id": args.invocation_id, "run_id": run_id, "status": status, "harness": "antigravity", "output_path": str(output.relative_to(collaborate.PROJECT_ROOT))}, ensure_ascii=False))
         return 0 if status == "completed" else 3
     except (collaborate.CollaborationError, HarnessProfileError, AntigravityAdapterError) as exc:
         try:
