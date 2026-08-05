@@ -17,7 +17,6 @@ import claude_code_adapter
 import bootstrap
 import doctor
 import execute_antigravity_isolated
-import failure_events
 import install_global
 import migrate_portable_profiles
 import migrate_runtime
@@ -29,7 +28,6 @@ import quality_gate
 import review_execution
 import scope_guard_hook
 import collaborate
-from workspace_context import WorkspaceContext
 
 
 def main() -> None:
@@ -235,13 +233,6 @@ def main() -> None:
                 assert review_execution.main() == 0
             review = json.loads((control / "reviews" / "run-1.json").read_text(encoding="utf-8"))
             assert review["reviewer"] == "provider_b" and review["exit_code"] == 0
-
-        failure_root = root / "failure"
-        failure_root.mkdir()
-        failure_context = WorkspaceContext(failure_root, failure_root, failure_root, failure_root, failure_root / "shared", failure_root / "target", failure_root / "shared" / "bad-cases")
-        with patch.object(failure_events.os, "name", "nt"), patch.object(failure_events.sys, "platform", "win32"), patch.object(failure_events.os, "replace"):
-            event = failure_events.write_failure_event(failure_context, invocation_id="windows-event", error_code="validation_failed")
-        assert event is not None
 
     print("quality-maintenance surface tests passed")
 

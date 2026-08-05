@@ -18,6 +18,8 @@ def main():
     assert module.parse_records({"result": "```json\n" + json.dumps({"records": [good]}) + "\n```"}, [source]) == [good]
     missing = module.parse_records({"result": "{}"}, [source])
     assert missing[0]["error_code"] == "worker_missing_record"
+    invalid = module.parse_records({"result": "not-json"}, [source])
+    assert invalid[0]["error_code"] == "worker_missing_record"
     assert "Do not edit files" in module.prompt([source])
 
     config = {
@@ -30,6 +32,12 @@ def main():
     assert provider == "provider_b" and route["basis"] == "configured_fixed"
     provider, route = module.select_provider("provider_a", ["provider_a", "provider_b"], metrics, config)
     assert provider == "provider_a" and route["basis"] == "user_specified"
+    try:
+        module.select_provider("auto", [], metrics, config)
+    except module.batch.BatchError:
+        pass
+    else:
+        raise AssertionError("an empty ready provider set must fail closed")
     print("batch-worker tests passed")
 
 
