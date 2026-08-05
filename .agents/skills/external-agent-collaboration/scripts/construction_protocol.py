@@ -59,6 +59,15 @@ def runtime_dir(project_root: Path, goal_id: str) -> Path:
     return project_root / ".ai-collaboration" / "construction" / goal_id
 
 
+def _wp_number(wp: str) -> int:
+    if not wp.startswith("WP-") or not wp[3:].isdigit():
+        raise ConstructionError("wp must use WP-<number> format", "construction_wp_not_authorized")
+    number = int(wp[3:])
+    if number < 0 or number > 7:
+        raise ConstructionError("wp must be between WP-0 and WP-7", "construction_wp_not_authorized")
+    return number
+
+
 def relative_path(root: Path, value: str) -> Path:
     path = Path(value)
     if path.is_absolute() or ".." in path.parts or any(part in SENSITIVE_PARTS or part.startswith(".env") for part in path.parts):
@@ -88,10 +97,13 @@ def walk_files(root: Path) -> list[Path]:
     return sorted(result, key=lambda item: item.relative_to(root).as_posix())
 
 
-def workspace_manifest(root: Path, base_revision: str | None = None) -> dict[str, Any]:
+def workspace_manifest(root: Path, base_revision: str | None = None, exclude_paths: set[str] | None = None) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
+    excluded = exclude_paths or set()
     for path in walk_files(root):
         rel = path.relative_to(root).as_posix()
+        if rel in excluded:
+            continue
         if link_like(path):
             files.append({"path": rel, "git_state": "unknown", "kind": "link_leaf", "size": 0, "sha256": sha256_bytes(os.readlink(path).encode("utf-8", "surrogatepass"))})
             continue
@@ -148,6 +160,22 @@ def write_runtime(path: Path, value: Any) -> None:
     save(path, value)
 
 
+def write_runtime_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def validate_report(report: Any, goal_id: str, wp: str, root: Path | None = None) -> dict[str, Any]:
     if not isinstance(report, dict) or report.get("report_type") not in REPORT_TYPES or report.get("schema_version") != 1:
         raise ConstructionError("invalid construction_stage_report")
@@ -161,6 +189,8 @@ def validate_report(report: Any, goal_id: str, wp: str, root: Path | None = None
     claims = report.get("requirement_claims", [])
     if not isinstance(claims, list):
         raise ConstructionError("requirement_claims must be an array")
+    if report["proposed_status"] == "ready_for_review" and (not claims or any(isinstance(item, dict) and item.get("claimed_status") == "pending" for item in claims)):
+        raise ConstructionError("ready_for_review requires non-pending requirement claims")
     for claim in claims:
         if not isinstance(claim, dict) or not isinstance(claim.get("requirement_id"), str) or claim.get("claimed_status") not in {"passed", "failed", "pending", "not_applicable"}:
             raise ConstructionError("invalid requirement claim")
@@ -211,7 +241,7 @@ def validate_review(review: Any, goal_id: str, checkpoint_id: str) -> dict[str, 
             raise ConstructionError("review finding must include priority, required_change and acceptance_test")
         if finding.get("path") is not None:
             relative_path(Path.cwd(), str(finding["path"]))
-    if review["verdict"] in {"accepted", "accepted_with_followups"} and any(item.get("blocking") for item in findings):
+    if review["verdict"] in {"accepted", "accepted_with_followups"} and any(item.get("blocking") or (review["verdict"] == "accepted_with_followups" and item.get("priority") in {"P0", "P1"}) for item in findings):
         raise ConstructionError("accepted review cannot contain blocking findings")
     return review
 
@@ -224,7 +254,8 @@ def validate_ack(ack: Any, review: dict[str, Any]) -> dict[str, Any]:
         raise ConstructionError("review hash mismatch")
     expected = {item["finding_id"] for item in review.get("findings", [])}
     responses = ack.get("responses")
-    if not isinstance(responses, list) or {item.get("finding_id") for item in responses if isinstance(item, dict)} != expected:
+    response_ids = [item.get("finding_id") for item in responses if isinstance(item, dict)] if isinstance(responses, list) else []
+    if not isinstance(responses, list) or len(response_ids) != len(set(response_ids)) or set(response_ids) != expected:
         raise ConstructionError("acknowledgement must cover every review finding exactly once")
     if any(not isinstance(item, dict) or item.get("status") not in ACK_STATUSES for item in responses):
         raise ConstructionError("acknowledgement status is invalid")
@@ -247,9 +278,16 @@ def cmd_start_run(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
     directory = runtime_dir(root, args.goal_id)
     directory.mkdir(parents=True, exist_ok=True)
+    number = _wp_number(args.wp)
     manifest = workspace_manifest(root)
     run_id = args.run_id or f"run-{uuid.uuid4().hex[:12]}"
-    current = {"schema_version": 1, "goal_id": args.goal_id, "wp_id": args.wp, "run_id": run_id, "status": "running", "current_requirement": args.requirement, "authorized_paths": [relative_path(root, item).as_posix() for item in args.allow_path], "authorized_commands": args.allow_command, "pre_run_manifest_sha256": manifest["manifest_sha256"], "user_dirty_paths": git_dirty_paths(root), "recent_evidence_ids": [], "next_action": args.stop_condition, "updated_at": now()}
+    previous = load(directory / "current.json", {})
+    attempts = int(previous.get("attempts", 0)) if isinstance(previous, dict) else 0
+    if attempts >= 32:
+        raise ConstructionError("construction attempt limit of 32 reached", "construction_wp_not_authorized")
+    if number > 0 and not (directory / f"WP-{number - 1}.accepted").is_file():
+        raise ConstructionError(f"{args.wp} is not authorized before WP-{number - 1}.accepted", "construction_wp_not_authorized")
+    current = {"schema_version": 1, "goal_id": args.goal_id, "wp_id": args.wp, "run_id": run_id, "status": "running", "attempts": attempts + 1, "current_requirement": args.requirement, "authorized_paths": [relative_path(root, item).as_posix() for item in args.allow_path], "authorized_commands": args.allow_command, "pre_run_manifest_sha256": manifest["manifest_sha256"], "user_dirty_paths": git_dirty_paths(root), "recent_evidence_ids": [], "next_action": args.stop_condition, "updated_at": now()}
     with locked(directory / "current.json"):
         write_runtime(directory / "current.json", current)
         write_runtime(directory / f"pre-{run_id}.workspace-manifest.json", manifest)
@@ -286,6 +324,15 @@ def cmd_materialize(args: argparse.Namespace) -> int:
     with locked(directory / "current.json"):
         write_runtime(directory / f"{checkpoint_id}.checkpoint.json", checkpoint)
         write_runtime(directory / "workspace-manifest.json", manifest)
+        evidence = []
+        for index, command in enumerate(report.get("commands_claimed", []), 1):
+            if isinstance(command, str):
+                evidence.append({"evidence_id": f"CLAIM-{index:03d}", "kind": "model_claim", "platform": "windows" if os.name == "nt" else "macos", "argv": [command], "working_directory": ".", "exit_code": None, "duration_ms": None, "result": "unverified", "output_sha256": None, "bounded_summary": "Luna claimed command; runner did not observe execution", "artifact_paths": []})
+        write_runtime(directory / "evidence.json", evidence)
+        handoff_lines = ["# Construction handoff", "", f"- Goal: {args.goal_id}", f"- WP: {args.wp}", f"- Checkpoint: {checkpoint_id}", "", "## Luna claim", report["implementation_summary"], "", "## Runner-observed changes"]
+        handoff_lines.extend(f"- {item['change_type']}: {item['path']} (owned_by_current_run={item.get('owned_by_current_run', False)})" for item in changed)
+        handoff_lines.extend(["", "## Unresolved risks", *[f"- {item}" for item in report.get("unresolved_risks", [])], "", "## Requested Codex review", *[f"- {item}" for item in report.get("requested_review", [])]])
+        write_runtime_text(directory / "handoff.md", "\n".join(handoff_lines[:120]) + "\n")
         current.update({"status": report["proposed_status"], "checkpoint_id": checkpoint_id, "recent_evidence_ids": [item.get("evidence_id") for item in report.get("evidence", []) if isinstance(item, dict)], "next_action": "wait_for_codex_review", "updated_at": now()})
         write_runtime(directory / "current.json", current)
     print(json.dumps({"checkpoint_id": checkpoint_id, "manifest_sha256": manifest["manifest_sha256"]}, ensure_ascii=False))
@@ -310,10 +357,13 @@ def cmd_write_review(args: argparse.Namespace) -> int:
     directory = runtime_dir(root, args.goal_id)
     path, review = read_project_json(root, args.review)
     validate_review(review, args.goal_id, args.checkpoint)
+    review["runner_review_source"] = str(path.relative_to(root))
     checkpoint = load(directory / f"{args.checkpoint}.checkpoint.json", None)
     validate_checkpoint(checkpoint, args.goal_id, str(checkpoint.get("wp_id")), root=root)
     if review.get("reviewed_manifest_sha256") != checkpoint.get("manifest_sha256"):
         raise ConstructionError("review manifest does not match checkpoint")
+    if workspace_manifest(root, exclude_paths={str(path.relative_to(root))}).get("manifest_sha256") != checkpoint.get("manifest_sha256"):
+        raise ConstructionError("review is stale: workspace manifest changed", "construction_checkpoint_stale")
     with locked(directory / "current.json"):
         write_runtime(directory / f"{review['review_id']}.review.json", review)
         if args.markdown:
@@ -328,6 +378,7 @@ def cmd_record_ack(args: argparse.Namespace) -> int:
     review = load(directory / f"{args.review_id}.review.json", None)
     ack_path, ack = read_project_json(root, args.ack)
     validate_ack(ack, review)
+    ack["runner_ack_source"] = str(ack_path.relative_to(root))
     with locked(directory / "current.json"):
         write_runtime(directory / f"{args.review_id}.acknowledgement.json", ack)
     print(json.dumps({"review_id": args.review_id, "valid": True, "ack_path": str(ack_path.relative_to(root))}, ensure_ascii=False))
@@ -348,6 +399,9 @@ def cmd_accept(args: argparse.Namespace) -> int:
     validate_ack(ack, review)
     if any(item.get("status") not in {"accepted", "completed"} for item in ack.get("responses", [])):
         raise ConstructionError("checkpoint cannot be accepted with unaccepted finding responses")
+    excluded = {item for item in (review.get("runner_review_source"), ack.get("runner_ack_source")) if isinstance(item, str)}
+    if workspace_manifest(root, exclude_paths=excluded).get("manifest_sha256") != load(directory / f"{args.checkpoint}.checkpoint.json", {}).get("manifest_sha256"):
+        raise ConstructionError("checkpoint is stale: workspace changed during review", "construction_checkpoint_stale")
     marker = {"checkpoint_id": args.checkpoint, "review_sha256": digest, "accepted_at": now(), "actor": "codex"}
     with locked(directory / "current.json"):
         write_runtime(directory / f"{args.wp}.accepted", marker)
