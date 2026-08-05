@@ -66,6 +66,29 @@ def main() -> None:
             else:
                 raise AssertionError("Windows lock timeout must be surfaced")
 
+    posix_path = Path(tempfile.gettempdir()) / "state-store-posix-branch.json"
+    unlock_calls: list[tuple[int, int]] = []
+    fake_fcntl = SimpleNamespace(
+        LOCK_EX=1,
+        LOCK_NB=2,
+        LOCK_UN=3,
+        flock=lambda _fd, mode: unlock_calls.append((0, mode)),
+    )
+    with patch.dict(sys.modules, {"fcntl": fake_fcntl}), patch("state_store.os.name", "posix"):
+        with locked(posix_path):
+            pass
+    assert unlock_calls[-1][1] == fake_fcntl.LOCK_UN
+
+    unsupported_fcntl = SimpleNamespace(LOCK_EX=1, LOCK_NB=2, LOCK_UN=3)
+    with patch.dict(sys.modules, {"fcntl": unsupported_fcntl}), patch("state_store.os.name", "posix"):
+        try:
+            with locked(posix_path):
+                pass
+        except StateStoreError as exc:
+            assert str(exc) == "state_lock_unsupported"
+        else:
+            raise AssertionError("missing POSIX lock API must fail closed")
+
     with tempfile.TemporaryDirectory(prefix="state-store-") as directory:
         path = Path(directory) / "state.json"
         with locked(path):

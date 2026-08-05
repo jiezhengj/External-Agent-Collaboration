@@ -114,18 +114,21 @@ def main() -> None:
                     raise AssertionError("workdir outside explicit root must fail")
             outside.rmdir()
 
+    reparse_path = Path("reparse-point")
+    fallback_path = Path("reparse-point-fallback")
+    failed_path = Path("reparse-point-failed")
     fake_reparse = SimpleNamespace(st_mode=0, st_file_attributes=0x400)
     with patch("workspace_context.os.name", "nt"), patch("workspace_context.os.lstat", return_value=fake_reparse):
-        assert link_like(Path("reparse-point")) is True
+        assert link_like(reparse_path) is True
     fake_kernel = SimpleNamespace(GetFileAttributesW=lambda _path: 0x400)
     fake_ctypes = SimpleNamespace(windll=SimpleNamespace(kernel32=fake_kernel))
     with patch("workspace_context.os.name", "nt"), patch("workspace_context.os.lstat", return_value=SimpleNamespace(st_mode=0)), patch.dict(sys.modules, {"ctypes": fake_ctypes}):
-        assert link_like(Path("reparse-point-fallback")) is True
+        assert link_like(fallback_path) is True
     fake_kernel_fail = SimpleNamespace(GetFileAttributesW=lambda _path: 0xFFFFFFFF)
     fake_ctypes_fail = SimpleNamespace(windll=SimpleNamespace(kernel32=fake_kernel_fail))
     with patch("workspace_context.os.name", "nt"), patch("workspace_context.os.lstat", return_value=SimpleNamespace(st_mode=0)), patch.dict(sys.modules, {"ctypes": fake_ctypes_fail}):
         try:
-            link_like(Path("reparse-point-failed"))
+            link_like(failed_path)
         except WorkspaceContextError as exc:
             assert exc.code == "scope_guard_unavailable"
         else:
