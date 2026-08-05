@@ -31,6 +31,32 @@ def main() -> None:
         record = json.loads(path.read_text(encoding="utf-8"))
         assert record["terminal_status"] in TERMINAL_STATUSES and record["stage"] in STAGES
         assert record["skill_runtime_version"]
+        legacy = write_failure_event(
+            context,
+            invocation_id="drivers-license-legacy",
+            error_code="cross_project_context_unsupported",
+            terminal_status="failed_preflight",
+            stage="workspace_resolution",
+            provider_invoked=False,
+            requested_harness="antigravity",
+            selected_harness="antigravity",
+            message="DriversLicense sibling handoff was outside the legacy project context.",
+        )
+        legacy_record = json.loads(legacy.read_text(encoding="utf-8"))
+        assert legacy_record["error_code"] == "cross_project_context_unsupported"
+        assert legacy_record["retryable"] is False
+        assert legacy_record["next_action"] == "upgrade_workspace_context"
+        assert legacy_record["provider_invoked"] is False and legacy_record["run_id"] is None
+        retry = write_failure_event(
+            context,
+            invocation_id="drivers-license-legacy-retry",
+            parent_invocation_id="drivers-license-legacy",
+            error_code="cross_project_context_unsupported",
+            terminal_status="failed_preflight",
+            stage="workspace_resolution",
+            provider_invoked=False,
+        )
+        assert json.loads(retry.read_text(encoding="utf-8"))["parent_invocation_id"] == "drivers-license-legacy"
         outside = root.parent / "outside.txt"
         outside.write_text("outside", encoding="utf-8")
         write_failure_event(context, invocation_id="inv-paths", error_code="not-a-real-code", terminal_status="not-a-status", stage="not-a-stage", working_directory=str(outside), message=None)
