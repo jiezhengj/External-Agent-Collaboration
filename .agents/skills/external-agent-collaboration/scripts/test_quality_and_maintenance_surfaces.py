@@ -76,7 +76,7 @@ def main() -> None:
         with patch.object(process_support.os, "name", "nt"), patch.object(process_support.subprocess, "run") as run_mock:
             process_support._signal_process_group(fake, hard=True)
             assert run_mock.called
-        with patch.object(process_support.os, "name", "posix"), patch.object(process_support.os, "killpg") as killpg:
+        with patch.object(process_support.os, "name", "posix"), patch.object(process_support.os, "killpg", create=True) as killpg:
             process_support._signal_process_group(fake, hard=False)
             killpg.assert_called_once()
         with patch.object(process_support.os, "name", "nt"), patch.object(process_support.signal, "CTRL_BREAK_EVENT", 1, create=True):
