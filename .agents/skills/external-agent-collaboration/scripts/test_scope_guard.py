@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import tempfile
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,12 +44,14 @@ def main() -> None:
         project = Path(directory)
         (project / "docs").mkdir()
         (project / "outside").mkdir()
+        linked = None
         try:
             (project / "docs" / "link").symlink_to(project / "outside", target_is_directory=True)
             linked = request(target_project_root=str(project), candidate_paths=["docs/link/file.txt"])
             assert check(linked)["reason_code"] == "linked_path_in_execute_scope"
-        except (OSError, NotImplementedError):
-            pass
+        except (OSError, NotImplementedError) as exc:
+            if os.name != "nt":
+                raise AssertionError("macOS must exercise the symlink escape branch") from exc
         try:
             require_execute_guard(directory)
         except ScopeGuardError as exc:
@@ -58,8 +61,9 @@ def main() -> None:
         settings = project / "settings.json"
         settings.write_text('{"scope": "verified"}', encoding="utf-8")
         assert execute_hook_available(project) is True
-        with patch("scope_guard.link_like", side_effect=OSError):
-            assert check(linked)["decision"] == "deny"
+        if linked is not None:
+            with patch("scope_guard.link_like", side_effect=OSError):
+                assert check(linked)["decision"] == "deny"
     print("scope-guard tests passed")
 
 

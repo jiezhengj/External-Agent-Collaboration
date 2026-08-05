@@ -12,7 +12,14 @@
 
 - 本机回归 53/53；标准库 coverage gate 通过 80% 总量与 90% 核心模块门槛；GitHub Actions run `30980028521` 已以提交 `1f56dde` 通过 macOS/Windows × Python 3.10/3.13 四矩阵及 coverage 必需检查。
 - macOS sibling fixture 真实 Antigravity read-only smoke 成功，response contract 有效、summary 包含 `AGY_CROSS_PROJECT_OK`、workspace hash 前后一致。
-- Windows 原生 fake/回归已由 CI 覆盖；Windows 真实 provider smoke、完整 trace coverage gate 与 8 个 accepted WP packet 仍 pending。
+- Windows 原生 fake/回归已由 CI 覆盖；本机 53/53 回归、privacy gate、coverage gate 通过；WP-0 至 WP-6 已有最新 accepted checkpoint/review/ack packet。Windows 真实 provider smoke、WP-7 最终 packet 和最终发布复验仍 pending。
+
+## 2026-08-05 阶段收口补充
+
+- construction protocol 现在只允许 Codex runner 通过受控的内部 runtime path 写入 `.ai-collaboration` 输入；普通项目相对路径仍拒绝越界。
+- workspace manifest 忽略 Python 生成缓存，避免无关 `__pycache__`/`.pyc` 令 checkpoint 失效。
+- checkpoint 的 `goal_contract_sha256` 绑定到实际契约文件字节哈希；契约新增 `wp0_checkpoint`/`review_wp0` 至 `wp7_checkpoint`/`review_wp7` 的逐阶段 criterion。
+- 这次阶段收口不是 Goal 完成。Windows 原生验证完成前，Goal 保持 `active`，且不写入 `wp7_windows`、`cross_project_real_readonly_windows` 等 passed decision。
 
 ## 隐私与回滚
 

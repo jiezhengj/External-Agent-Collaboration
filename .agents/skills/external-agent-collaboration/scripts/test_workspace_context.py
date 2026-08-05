@@ -46,6 +46,13 @@ def main() -> None:
         context = resolve_context(child, root)
         assert context.target_project_root == root.resolve()
         assert context.target_workdir == child.resolve()
+        named_directory = root / "中文目录 (fixture)"
+        named_directory.mkdir()
+        named_file = named_directory / "空格与括号 (1).txt"
+        named_file.write_text("fixture", encoding="utf-8")
+        named_relative = context.target_relative(named_file)
+        assert named_relative.as_posix() == "中文目录 (fixture)/空格与括号 (1).txt"
+        assert context.target_path(named_relative).resolve() == named_file.resolve()
         assert context.target_relative(child / "file.txt").as_posix() == "src/file.txt"
         try:
             context.target_path("../escape")

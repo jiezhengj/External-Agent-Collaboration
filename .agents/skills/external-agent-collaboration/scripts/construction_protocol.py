@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,6 +34,7 @@ CHECKPOINT_STATUSES = REPORT_STATUSES
 REVIEW_VERDICTS = {"accepted", "accepted_with_followups", "changes_required", "blocked", "failed"}
 ACK_STATUSES = {"accepted", "completed", "disputed", "blocked"}
 SENSITIVE_PARTS = {".git", ".ai-collaboration", "secrets", "credentials", "private"}
+GENERATED_PARTS = {"__pycache__"}
 
 
 class ConstructionError(ValueError):
@@ -46,6 +49,19 @@ def now() -> str:
 
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def contract_hash(root: Path, contract_path: str | None, supplied_hash: str | None) -> str | None:
+    """Bind a checkpoint to the exact versioned Goal contract when supplied."""
+    if contract_path is None:
+        if supplied_hash is not None and re.fullmatch(r"[0-9a-fA-F]{64}", supplied_hash) is None:
+            raise ConstructionError("goal_contract_sha256 must be a 64-character hexadecimal digest")
+        return supplied_hash
+    path = relative_path(root, contract_path)
+    actual = sha256_bytes((root / path).read_bytes())
+    if supplied_hash is not None and not hmac.compare_digest(actual, supplied_hash.lower()):
+        raise ConstructionError("goal contract hash does not match the supplied digest")
+    return actual
 
 
 def safe_id(value: str, label: str) -> str:
@@ -88,7 +104,7 @@ def walk_files(root: Path) -> list[Path]:
         for entry in os.scandir(current):
             path = Path(entry.path)
             rel = path.relative_to(root)
-            if rel.parts and rel.parts[0] in SENSITIVE_PARTS:
+            if rel.parts and (rel.parts[0] in SENSITIVE_PARTS or rel.parts[0] in GENERATED_PARTS or path.suffix in {".pyc", ".pyo"}):
                 continue
             if entry.is_dir(follow_symlinks=False) and not link_like(path):
                 pending.append(path)
@@ -144,8 +160,31 @@ def git_dirty_paths(root: Path) -> list[str]:
     return sorted(set(paths))
 
 
-def read_project_json(root: Path, value: str) -> tuple[Path, dict[str, Any]]:
-    path = root / relative_path(root, value)
+def internal_runtime_path(root: Path, value: str) -> Path:
+    """Resolve a runner-owned JSON artifact inside the ignored control root.
+
+    Stage reports, Codex reviews, and acknowledgements are exchanged through
+    the runner, so they may live under ``.ai-collaboration``.  They still need
+    the same relative-path, traversal, and link checks as project artifacts;
+    allowing this narrow internal path avoids forcing a transient control
+    packet into the versioned workspace.
+    """
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts or candidate.parts[0] != ".ai-collaboration":
+        raise ConstructionError("internal artifact must be under .ai-collaboration")
+    path = root / candidate
+    try:
+        path.resolve().relative_to((root / ".ai-collaboration").resolve())
+    except ValueError as exc:
+        raise ConstructionError("internal artifact escapes .ai-collaboration") from exc
+    if link_like(path) or any(link_like(parent) for parent in path.parents if parent != root):
+        raise ConstructionError("internal artifact may not traverse a link")
+    return path
+
+
+def read_project_json(root: Path, value: str, *, allow_runtime: bool = False) -> tuple[Path, dict[str, Any]]:
+    candidate = Path(value)
+    path = internal_runtime_path(root, value) if allow_runtime and candidate.parts and candidate.parts[0] == ".ai-collaboration" else root / relative_path(root, value)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -212,6 +251,9 @@ def validate_checkpoint(checkpoint: Any, goal_id: str, wp: str, status: str | No
         raise ConstructionError("invalid checkpoint schema")
     if checkpoint.get("goal_id") != goal_id or checkpoint.get("wp_id") != wp:
         raise ConstructionError("checkpoint goal_id/wp_id mismatch")
+    goal_hash = checkpoint.get("goal_contract_sha256")
+    if goal_hash is not None and (not isinstance(goal_hash, str) or re.fullmatch(r"[0-9a-fA-F]{64}", goal_hash) is None):
+        raise ConstructionError("checkpoint goal_contract_sha256 is invalid")
     if checkpoint.get("status") not in CHECKPOINT_STATUSES:
         raise ConstructionError("checkpoint status is invalid")
     if status and checkpoint.get("status") != status:
@@ -298,7 +340,7 @@ def cmd_start_run(args: argparse.Namespace) -> int:
 def cmd_materialize(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
     directory = runtime_dir(root, args.goal_id)
-    report_path, report = read_project_json(root, args.report)
+    report_path, report = read_project_json(root, args.report, allow_runtime=True)
     validate_report(report, args.goal_id, args.wp, root)
     current = load(directory / "current.json", {})
     run_id = current.get("run_id") or args.run_id
@@ -319,7 +361,7 @@ def cmd_materialize(args: argparse.Namespace) -> int:
         else:
             change_type = "modified"
         changed.append({"path": path, "change_type": change_type, "sha256": after.get(path, {}).get("sha256"), "requirement_ids": [], "reason": "runner observed post-run workspace", "risk": "unknown", "owned_by_current_run": path not in dirty})
-    checkpoint = {"schema_version": 1, "goal_id": args.goal_id, "checkpoint_id": checkpoint_id, "wp_id": args.wp, "run_id": run_id, "status": report["proposed_status"], "created_at": now(), "base_revision": git_revision(root), "goal_contract_sha256": args.goal_contract_sha256, "implementation_summary": report["implementation_summary"], "requirement_results": [{"requirement_id": item["requirement_id"], "status": item["claimed_status"], "evidence_ids": item.get("claimed_evidence", [])} for item in report["requirement_claims"]], "changed_files": changed, "decisions": report.get("decisions", []), "deviations": report.get("deviations", []), "unresolved_risks": report.get("unresolved_risks", []), "requested_review": report.get("requested_review", []), "proposed_next_wp": args.next_wp, "manifest_sha256": manifest["manifest_sha256"], "report_path": str(report_path.relative_to(root))}
+    checkpoint = {"schema_version": 1, "goal_id": args.goal_id, "checkpoint_id": checkpoint_id, "wp_id": args.wp, "run_id": run_id, "status": report["proposed_status"], "created_at": now(), "base_revision": git_revision(root), "goal_contract_sha256": contract_hash(root, args.goal_contract, args.goal_contract_sha256), "implementation_summary": report["implementation_summary"], "requirement_results": [{"requirement_id": item["requirement_id"], "status": item["claimed_status"], "evidence_ids": item.get("claimed_evidence", [])} for item in report["requirement_claims"]], "changed_files": changed, "decisions": report.get("decisions", []), "deviations": report.get("deviations", []), "unresolved_risks": report.get("unresolved_risks", []), "requested_review": report.get("requested_review", []), "proposed_next_wp": args.next_wp, "manifest_sha256": manifest["manifest_sha256"], "report_path": str(report_path.relative_to(root))}
     validate_checkpoint(checkpoint, args.goal_id, args.wp, root=root)
     with locked(directory / "current.json"):
         write_runtime(directory / f"{checkpoint_id}.checkpoint.json", checkpoint)
@@ -355,7 +397,7 @@ def cmd_validate_checkpoint(args: argparse.Namespace) -> int:
 def cmd_write_review(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
     directory = runtime_dir(root, args.goal_id)
-    path, review = read_project_json(root, args.review)
+    path, review = read_project_json(root, args.review, allow_runtime=True)
     validate_review(review, args.goal_id, args.checkpoint)
     review["runner_review_source"] = str(path.relative_to(root))
     checkpoint = load(directory / f"{args.checkpoint}.checkpoint.json", None)
@@ -376,7 +418,7 @@ def cmd_record_ack(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
     directory = runtime_dir(root, args.goal_id)
     review = load(directory / f"{args.review_id}.review.json", None)
-    ack_path, ack = read_project_json(root, args.ack)
+    ack_path, ack = read_project_json(root, args.ack, allow_runtime=True)
     validate_ack(ack, review)
     ack["runner_ack_source"] = str(ack_path.relative_to(root))
     with locked(directory / "current.json"):
@@ -448,7 +490,7 @@ def parser() -> argparse.ArgumentParser:
         return child
     common("init-goal")
     start = common("start-run"); start.add_argument("--wp", required=True); start.add_argument("--requirement", required=True); start.add_argument("--allow-path", action="append", default=[]); start.add_argument("--allow-command", action="append", default=[]); start.add_argument("--stop-condition", required=True); start.add_argument("--run-id")
-    materialize = common("materialize-checkpoint"); materialize.add_argument("--wp", required=True); materialize.add_argument("--report", required=True); materialize.add_argument("--sequence", required=True, type=int); materialize.add_argument("--next-wp"); materialize.add_argument("--run-id"); materialize.add_argument("--goal-contract-sha256", default=None)
+    materialize = common("materialize-checkpoint"); materialize.add_argument("--wp", required=True); materialize.add_argument("--report", required=True); materialize.add_argument("--sequence", required=True, type=int); materialize.add_argument("--next-wp"); materialize.add_argument("--run-id"); materialize.add_argument("--goal-contract", default=None); materialize.add_argument("--goal-contract-sha256", default=None)
     validate = common("validate-checkpoint"); validate.add_argument("--wp", required=True); validate.add_argument("--checkpoint"); validate.add_argument("--status")
     review = common("write-review"); review.add_argument("--checkpoint", required=True); review.add_argument("--review", required=True); review.add_argument("--markdown")
     ack = common("record-ack"); ack.add_argument("--review-id", required=True); ack.add_argument("--ack", required=True)

@@ -4,18 +4,26 @@
 
 |字段|值|
 |---|---|
-|状态|施工实现已落地；macOS 本机验证通过；Windows 原生 CI/接手机真实 smoke 仍是最终发布门，不提前声明生产完成|
+|状态|WP-0 至 WP-6 已完成 Codex Review Gate；macOS 全量验证通过；WP-7/Windows 原生真实 smoke 尚未完成，因此 Goal 仍为 active，不声明生产完成|
 |基线提交|实现前快照 `a8a88a5fdbfdf897d74a8e072c1b6df3e0e732c7`；实现提交以 Git 历史为准|
 |基线日期|2026-08-05|
 |适用范围|`external-agent-collaboration` Codex-only Skill 的全局发现、任务分类、跨项目调用、Claude Code/Antigravity 路由、受控执行、失败记录、双平台验证与发布|
 |目标施工者|Luna 级模型；不假设施工者能自行补齐未写明的架构决定|
 |施工编排|一个持续 Goal 覆盖 WP-0 至 WP-7；每个 WP 包含一个或多个 Run，并在进入下一 WP 前通过 Codex Review Gate|
 |目标平台|macOS 与原生 Windows；Windows 不依赖 WSL、Git Bash 或 POSIX 兼容层|
-|当前回归证据|本机 `run_regression.py`：53 个脚本通过；`quality_gate.py --privacy` 与标准库 `coverage_gate.py --check` 通过；GitHub Actions run `30980028521` 已以提交 `1f56dde` 通过 macOS/Windows × Python 3.10/3.13 四矩阵及 coverage 必需检查；新增跨项目、失败 ledger、真实 PreToolUse scope hook、事务、施工协议、状态迁移和 200 次并发测试已纳入回归|
+|当前回归证据|2026-08-05 本机 `run_regression.py`：53 个脚本通过；`quality_gate.py --privacy` 与标准库 `coverage_gate.py --check` 通过；此前 GitHub Actions run `30980230261` 的 macOS/Windows × Python 3.10/3.13 四矩阵已通过；本轮新增协议契约哈希、运行态 artifact 路径与缓存排除测试已纳入回归|
 |设计复核|2026-08-05，Claude Code harness + DeepSeek，run `1785899848-0adfeaa0`，结论 `ready_with_revisions`；6 个 P0 与全部 P1/P2 文档歧义已回写本文|
 |完成判定|仍仅以第 18 节的可执行完成门槛为准；本机通过不替代 Windows 原生验证、真实最小 smoke、实际 hook 能力证据和最终 Codex Review Gate|
 
 本文是一次生产加固专题的唯一施工入口。它不替代当前 PRD、技术方案、实施计划和测试文档；实现完成后，施工者必须按第 17 节把已经生效的规则回写到当前规范，并在专题索引中更新状态。
+
+### 0.1 当前 Goal 与阶段交付状态（2026-08-05）
+
+Goal `global-skill-production-hardening-v2` 仍为 `active`。Codex 已接受以下阶段包：WP-0 `CP-005-WP-0`/`RV-005`、WP-1 `CP-006-WP-1`/`RV-006`、WP-2 `CP-007-WP-2`/`RV-007`、WP-3 `CP-008-WP-3`/`RV-008`、WP-4 `CP-009-WP-4`/`RV-009`、WP-5 `CP-010-WP-5`/`RV-010`、WP-6 `CP-011-WP-6`/`RV-011`。WP-1 包含 Unicode、空格和括号路径修复；WP-4 至 WP-6 只声明已实际运行的平台证据。
+
+本轮还修复了施工协议的三个确定性缺口：Codex runner 可安全写入 `.ai-collaboration` 运行态输入、manifest 排除生成的 `__pycache__`/`.pyc`、checkpoint 的 `goal_contract_sha256` 必须匹配实际契约文件字节哈希。旧 checkpoint 不作为最终证据，当前 Goal 状态已指向上述最新 accepted packet。
+
+尚未通过的发布门是 WP-7 的最终文档/隐私/CI/发布复验，以及原生 Windows 上的真实 provider smoke、Windows 本地回归与 Windows 相关 criterion。Windows Codex 请按 [WP-7 Windows 生产接手文档](WINDOWS_PRODUCTION_HANDOFF.md) 执行；不得把 CI 或 macOS 结果替代真实 Windows provider 证据。
 
 ## 1. 结论先行
 
