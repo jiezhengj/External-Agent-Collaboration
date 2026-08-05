@@ -10,7 +10,7 @@
 
 ## 当前证据
 
-- 本机回归 53/53；标准库 coverage gate 通过 80% 总量与 90% 核心模块门槛；coverage 已接入 GitHub Actions macOS/Windows × Python 3.10/3.13 四矩阵 workflow，新提交结果待发布后记录。
+- 本机回归 53/53；标准库 coverage gate 通过 80% 总量与 90% 核心模块门槛；GitHub Actions run `30980028521` 已以提交 `1f56dde` 通过 macOS/Windows × Python 3.10/3.13 四矩阵及 coverage 必需检查。
 - macOS sibling fixture 真实 Antigravity read-only smoke 成功，response contract 有效、summary 包含 `AGY_CROSS_PROJECT_OK`、workspace hash 前后一致。
 - Windows 原生 fake/回归已由 CI 覆盖；Windows 真实 provider smoke、完整 trace coverage gate 与 8 个 accepted WP packet 仍 pending。
 
